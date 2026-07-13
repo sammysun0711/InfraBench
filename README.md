@@ -1,4 +1,5 @@
-## InfraBench: Benchmarking and Routing AI Agents for Production AI Infrastructure Engineering Tasks
+## InfraBench: 
+Benchmarking and Routing AI Agents for Production AI Infrastructure Engineering Tasks
 
 ### Introduction:
 AI agents are effective for chatbots, documentation, and general software development, but leveraging them for production-grade AI infrastructure (AI Infra) engineering, especially on emerging hardware, remains an open challenge. This paper introduces InfraBench, a benchmark for evaluating AI agents on real-world AI Infra tasks targeting AMD MI35X GPUs, alongside a routing strategy that assigns each task to its most suitable model. Problem statement: How can we benchmark AI agents on real-world AI Infra tasks and route each task to the model achieving the best trade-off across success rate, latency, and cost? 
