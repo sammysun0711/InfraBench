@@ -1,0 +1,53 @@
+You are characterizing the HBM memory bandwidth of an AMD MI35X (CDNA4, gfx950)
+GPU by writing and running your own microbenchmark — the same kind of low-level
+measurement used to guide kernel optimization.
+
+## Goal
+
+Measure the **achievable HBM read bandwidth** of this GPU, in GB/s, by writing a
+GPU kernel that performs a **read-only streaming** pass over a large buffer
+(e.g. read every element of a multi-GiB array and reduce it) and timing it
+accurately. This is analogous to the memory-throughput methodology in
+https://github.com/tingqli/pyhip/blob/main/docs/mem_latency.md; report the
+sustained **read** bandwidth (read traffic only — do not count writes).
+
+Guidance for a good measurement:
+- Use a working set far larger than cache (e.g. a 2-4 GiB buffer) so you hit HBM.
+- Use coalesced, vectorized reads (e.g. `float4`) and enough blocks/threads to
+  saturate the memory system.
+- Warm up, then time multiple iterations and take the median.
+- Count ONLY the bytes read (read-only bandwidth). A read+write copy measures a
+  lower number and will not reach the target — this is a pure read benchmark.
+- Beware dead-code elimination: if the compiler proves your reads are unused it
+  will delete them. Keep the reduction result live (e.g. an effectively-never-
+  taken write of the accumulator to a sink buffer).
+
+## Deliverable
+
+Create an executable script at **`/app/measure_bandwidth.sh`** that builds
+(if needed) and runs your benchmark, and prints exactly one line to stdout:
+
+```
+HBM_BANDWIDTH_GBPS=<number>
+```
+
+where `<number>` is the measured sustained HBM **read** bandwidth in GB/s. You
+may put your kernel source anywhere under `/app` and compile it with `hipcc`
+(target `--offload-arch=gfx950`). The script must finish in a couple of minutes.
+
+## How you are graded
+
+The grader runs `/app/measure_bandwidth.sh` itself (under a GPU profiler) and:
+1. parses the `HBM_BANDWIDTH_GBPS=` value,
+2. requires it to reach **>= 5000 GB/s (5.0 TB/s)** — the achievable read-only
+   HBM bandwidth on this GPU (a copy/unsaturated kernel falls short) — while
+   staying below the physical ceiling (fabricated numbers are rejected), and
+3. confirms your program actually dispatched GPU kernels (a hardcoded number
+   with no real kernel will fail).
+
+So your reported number must come from a genuine, well-optimized on-GPU
+read-bandwidth measurement.
+
+Notes:
+- The GPU assigned to this container is pre-selected; use the default device.
+- `hipcc` is available; the device is gfx950 (MI35X / CDNA4).
