@@ -13,11 +13,16 @@ if [ ! -f "$AGENT" ]; then
   echo 0 > /logs/verifier/reward.txt; exit 0
 fi
 
-# 1) Baseline: default kernels over the untuned shape list.
-/opt/venv/bin/python /tests/bench_gemm.py --mode baseline --path "$UNTUNED" --out /tmp/baseline.json
+# Both runs benchmark the SAME full shape list (/app/gemma4_untuned_gemm.csv);
+# baseline vs tuned is selected purely by AITER_CONFIG_GEMM_BF16.
 
-# 2) Agent: the tuned config.
-/opt/venv/bin/python /tests/bench_gemm.py --mode config --path "$AGENT" --out /tmp/agent.json
+# 1) Baseline: point config at a nonexistent file → production op uses defaults.
+AITER_CONFIG_GEMM_BF16=/tmp/no_such_tuned.csv \
+  /opt/venv/bin/python /tests/bench_gemm.py --input "$UNTUNED" --out /tmp/baseline.json
+
+# 2) Agent: point config at the agent's tuned CSV (tuned where present, else default).
+AITER_CONFIG_GEMM_BF16="$AGENT" \
+  /opt/venv/bin/python /tests/bench_gemm.py --input "$UNTUNED" --out /tmp/agent.json
 
 cp /tmp/baseline.json /tmp/agent.json /logs/verifier/ 2>/dev/null || true
 

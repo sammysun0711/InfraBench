@@ -21,13 +21,15 @@ The tuner lives in the aiter source tree at `/sgl-workspace/aiter`:
 cd /sgl-workspace/aiter
 python3 csrc/gemm_a16w16/gemm_a16w16_tune.py \
   --input_file /app/gemma4_untuned_gemm.csv \
-  --tune_file /app/gemma4_tuned_gemm.csv
+  --tune_file /app/gemma4_tuned_gemm.csv \
+  --libtype triton,opus
 ```
 
-The tuner searches multiple backends (asm, opus, flydsl, triton, skinny, torch).
-Tuning takes a while (it JIT-builds and benchmarks many candidates per shape).
-`--with-hipblaslt` adds the hipBLASLt backend but is much slower and is NOT
-required to succeed.
+`--libtype` selects which backends to search (choices: asm, opus, flydsl,
+triton, skinny, torch). `triton,opus` tunes in a few minutes and is sufficient
+to beat the default. NOTE: `flydsl` searches thousands of candidates per shape
+and can take 4+ minutes PER shape — avoid it (and `--with-hipblaslt`, also very
+slow) unless you have a large time budget; neither is required to succeed.
 
 ## Deliverable
 

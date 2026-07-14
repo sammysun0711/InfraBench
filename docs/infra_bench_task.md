@@ -451,6 +451,24 @@ benchmark. Each is tagged with the category it counts toward.
   AND all shapes err_ratio ≤ 0.05.
 - **Hack risk**: fake CSV / copy defaults → verifier re-times with the real op;
   a bogus/degenerate config fails correctness (err_ratio) or shows no speedup.
+- **✅ BUILT+VALIDATED on v0.5.15 (reward 1.0, 5m39s)**: package
+  `infra-bench/tasks/gemma4-gemm-tuning/`. Baseline 191.1us → tuned 179.7us =
+  **5.9% aggregate speedup**, 11/11 shapes correct.
+  - **Final scoped config** (after killing an impractical 33-shape/all-backend
+    run that ran >50min): **11 shapes** (distinct gemma-4 weight shapes at M=128)
+    × **`--libtype triton,opus`**. flydsl DROPPED — it searches 2000-4700
+    candidates/shape (4+ min/shape); triton,opus ≈ 37s/shape.
+  - **Two bugs found+fixed during validation**:
+    1. Naive tuner picks regressive kernels (its internal timing disagrees with
+       the production op) → 2/11 shapes slower → aggregate only 0.7%. Fix: oracle
+       uses `--compare --update_improved --min_improvement_pct 3`, keeping only
+       genuine winners (11 tuned entries → 5 kept; rest fall back to default).
+    2. Verifier's `run_config` config-mode only benched the tuned CSV's shapes
+       (5), not all 11 → unfair vs 11-shape baseline. Fix: rewrote `bench_gemm.py`
+       to loop ALL shapes with the production op, tuned-vs-default selected purely
+       via `AITER_CONFIG_GEMM_BF16`.
+  - **Gate: ≥3%** aggregate speedup (measured 5.1-5.9% reproducibly; 3% gives
+    margin vs timing noise) + all shapes err_ratio ≤ 0.05.
 - **Difficulty**: hard
 
 ### F4. FlyDSL kernel implementation (→ Kernel Implementation) 🔴
