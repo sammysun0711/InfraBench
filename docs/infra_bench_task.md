@@ -1,8 +1,35 @@
-# InfraBench — Task Candidate Pool (Brainstorm)
+# InfraBench — Task Candidate Pool + Status
 
-Draft for discussion. A pool of **>20 candidates** across 5 categories; we pick
-the final 20 (target 4/category) from these. Each must eventually pass the
-Terminal-Bench bar: **specified / verifiable / solvable / not-hackable**
+A pool of task candidates across 5 categories (target ~4/category → ~20). Each
+must pass the Terminal-Bench bar: **specified / verifiable / solvable /
+not-hackable** (agent can't win by reading the solution, editing tests, or
+faking output).
+
+## Status — 8 tasks BUILT + oracle-validated on harbor (all 5 categories covered)
+
+| Task package | Category | Gate | Oracle |
+|---|---|---|---|
+| `hello-rocm` | GPU smoke test | GPU visible (torch) | ✅ 1.0 |
+| `gemma4-sglang-serving-opt` | Model Deployment | TTFT >10% & thrpt >2% & GSM8K≥0.955 vs baseline | ✅ 1.0 |
+| `llm-fp8-quantize` | Model Deployment | FP8 thrpt ≥10% > BF16 & GSM8K within 3 pts & FP8 declared | ✅ 1.0 |
+| `hotspot-analysis-torch-profiler` | Profiling | top-kernel name + %±5 vs re-profile | ✅ 1.0 |
+| `mem-bandwidth-bench` | Profiling | read-only HBM BW ≥5.0 TB/s + real GPU kernels (rocprofv3) | ✅ 1.0 |
+| `gemma4-gemm-tuning` | Kernel Tuning | aggregate GEMM latency ≥3% faster (aiter tuner) | ✅ 1.0 |
+| `engram-triton-kernel` | Kernel Implementation | Triton matches ref+tilelang, ≥60% faster than tilelang | ✅ 1.0 |
+| `pointnet2-hipify` | Debug Triage | CUDA→ROCm build + 8 numeric checks vs reference | ✅ 1.0 |
+
+**Shared infra (all validated):** GPU-pool allocator (`claim_gpu.sh` flock +
+`pin_gpu.sh` BASH_ENV auto-pin) for safe concurrent trials; models mounted RO
+from `/data/models`; `run.sh`/`analyze.sh` inject the AMD gateway header;
+`task.toml` sets `gpus=0` (GPU comes from the compose device-passthrough, not
+harbor's allocator). `run.sh` with no `-p` runs all tasks, one harbor job per
+package, up to `INFRA_PARALLEL` (default 4) concurrent.
+
+Everything below is the candidate brainstorm; built tasks are marked
+**✅ BUILT+VALIDATED** inline.
+
+---
+Terminal-Bench bar recap: **specified / verifiable / solvable / not-hackable**
 (agent can't win by reading the solution, editing tests, or faking output).
 
 Legend:
@@ -163,14 +190,29 @@ Serve / configure a model on MI350; correctness + a performance floor.
   devices have model memory resident.
 - **Difficulty**: medium–hard
 
-### A4. Quantize a model and preserve accuracy
-- **Image**: pytorch · **GPUs**: 1
-- **Task**: apply weight quantization (e.g. int8/fp8 path available on ROCm) to
-  a model; keep accuracy within tolerance on a small eval set while cutting VRAM.
-- **Verifiable**: verifier measures accuracy delta < ε AND VRAM reduction >
-  target vs. the fp16 baseline it computes itself.
-- **Hack risk**: skip quantization, just report numbers → verifier measures both
-  metrics from the produced artifact.
+### A4. Quantize a model and preserve accuracy ✅ BUILT+VALIDATED
+- Package: `infra-bench/tasks/llm-fp8-quantize/` · Image:
+  `lmsysorg/sglang:v0.5.15-rocm720-mi35x` · **GPUs**: 1 (pool)
+- **Task**: FP8-quantize `/models/Qwen3.5-27B` (dense hybrid: full-attn +
+  linear/recurrent-attn blocks) to `/app/fp8_model` and serve it with sglang so
+  it beats the BF16 model's throughput by ≥10% (8192/1024, conc 8) while keeping
+  GSM8K within 3 points.
+- **Verifiable**: verifier serves BOTH the BF16 baseline and the agent's FP8
+  model with fixed canonical commands, gates on FP8 total-throughput ≥10% > BF16
+  AND GSM8K drop ≤ 3 pts AND config declares an FP8 quantization (BF16 copy
+  rejected).
+- **Hack risk**: report fake numbers → verifier measures everything itself;
+  copy BF16 weights → static FP8-declaration check + throughput/accuracy gates.
+- **Oracle**: llm-compressor FP8_DYNAMIC (compressed-tensors), **ignoring the
+  whole `linear_attn` recurrence** (quantizing it → garbage output) + router
+  gate / embeddings / lm_head / mtp / visual, then graft `quantization_config`
+  onto the ORIGINAL config (llm-compressor flattens text_config + renames arch,
+  which sglang can't load). Install with `pip install --no-deps` so the ROCm
+  torch build is untouched; shim `torch.accelerator.get_memory_info`.
+- **✅ Oracle validated end-to-end via harbor (2026-07-14, reward 1.0)**:
+  BF16 3597.9 → FP8 4142.9 tok/s (**+15.1%**); GSM8K 62.5% → 60.5% (−2.0 pts,
+  within 3); FP8 declared. Rejected MoE gemma-4 (aiter/triton FP8 MoE path
+  immature in this build) in favor of the dense Qwen3.5-27B.
 - **Difficulty**: hard
 
 ---
@@ -219,6 +261,34 @@ Given a workload, use ROCm profilers to find and report the truth.
     do its own profiling+trace parsing.
 - **Difficulty**: medium
 
+### B1b. Measure HBM read bandwidth on MI35X (HIP microbenchmark) 🔴 ✅ BUILT+VALIDATED
+- Package: `infra-bench/tasks/mem-bandwidth-bench/` · Image:
+  `rocm/pytorch:rocm7.2.4_ubuntu24.04_py3.12_pytorch_release_2.10.0` · GPUs: 1
+- **Inspired by** github.com/tingqli/pyhip (`docs/mem_latency.md` +
+  `archive/mem-bw`); here scoped to **read-only HBM bandwidth** on MI35X/CDNA4.
+- **Task**: write a HIP **read-only streaming** microbenchmark (float4 reduction
+  over a multi-GiB buffer, DCE-guarded) and deliver `/app/measure_bandwidth.sh`
+  that builds+runs it and prints `HBM_BANDWIDTH_GBPS=<n>` (read traffic only).
+- **Verification = A+C hybrid** (the design pattern for measurement tasks — no
+  allclose/baseline; a bandwidth number just *is*):
+  - (A) reported value **≥ 5000 GB/s (5.0 TB/s gate)** AND ≤ 6500 (fabrication
+    ceiling). The gate is a real perf target: a read+write copy (~4.6 TB/s) or
+    unsaturated kernel FAILS; only a saturating read-only kernel (~5.3) passes.
+  - (C) grader RUNS the agent's script **under rocprofv3** and requires real GPU
+    kernel dispatches — a hardcoded number with no kernel fails.
+- **Ground truth measured** (access pattern matters):
+  - **read-only streaming**: ~5.3 TB/s (float4 reduction), stable ~±1% — matches
+    the expected MI350 ~5.5 TB/s. **This is the task target.**
+  - read+write copy: ~4.6 TB/s (lower — counts both directions).
+  - MI350 HBM3e *spec* ~8 TB/s; achievable ~4.6 (copy) / ~5.3 (read-only).
+  - **DCE caveat**: a read-only kernel needs a real (rare) write sink or the
+    compiler deletes the loads (a naive guard gave a bogus 720 TB/s).
+- **✅ Oracle validated via harbor (reward 1.0)**: 5278 GB/s (clears 5.0 gate,
+  ~6% margin; 3-run range 5278-5363), 56 GPU kernels traced. Anti-hack proven:
+  copy-value 4600 → fails gate; hardcoded → fails real_gpu_kernels; 20000 →
+  fails ceiling.
+- **Difficulty**: medium
+
 ### B2. Diagnose a memory-bandwidth-bound op
 - **Image**: pytorch · **GPUs**: 1
 - **Task**: given a script, classify a specified op as compute- vs
@@ -254,6 +324,33 @@ Given a workload, use ROCm profilers to find and report the truth.
 
 ## C. Kernel Implementation
 Write a correct GPU kernel (HIP or Triton) matching a reference.
+
+### C0. Engram gate fwd — Triton reimpl of DeepSeek TileLang kernel 🔴 ✅ BUILT+VALIDATED
+- Package: `infra-bench/tasks/engram-triton-kernel/` · Image: `rocm/pytorch:rocm7.2.4...`
+  **with tilelang built from source for ROCm** (pinned commit 6ed02aee) + DeepSeek
+  TileKernels + 2 portability patches. GPUs: 1.
+- **Task**: reimplement DeepSeek's engram `engram_gate_fwd` (RMSNorm×2 → fused dot
+  → signed-sqrt → sigmoid → x+gate·v) as a **Triton** kernel in
+  `/app/engram_triton.py`. Real DeepSeek kernel (deepseek-ai/TileKernels), not a
+  toy.
+- **Verifier gates**: (1) correctness `calc_diff < 2e-10` vs BOTH the PyTorch
+  reference AND the TileLang kernel (output + saved intermediates); (2) **≥60%
+  faster** than the TileLang kernel, verifier-timed at nt=8192/hc=4/hidden=4096.
+- **✅ Oracle validated via harbor (reward 1.0, 5m26s incl. tilelang build)**:
+  correctness 1.9e-10 vs ref / 6.0e-11 vs tilelang; speedup **66.5%** (tilelang
+  634us → triton 212us).
+- **Key findings** (`tasks/.engram_reference/findings.md`):
+  - tilelang pip wheels are CUDA-only → must build from source with
+    `USE_ROCM=1 USE_CUDA=0 PYTORCH_ROCM_ARCH=gfx950` (official Dockerfile.rocm).
+  - 2 ROCm patches: shim `tilelang.utils.target.determine_target` (removed in
+    0.1.12); TileKernels `config.py` `shared_memory_per_multiprocessor` →
+    `shared_memory_per_block`.
+  - **Perf gate physics**: op is bandwidth-bound. Achievable HBM BW on MI350 ≈
+    4770 GB/s (measured, NOT the 8TB/s spec). Hard ceiling = **72.9%** speedup
+    (perfect kernel at 100% BW). Oracle at 66.7% already hits 88% of peak BW.
+    Gate set to **60%** (safe margin); 70%+ is above the noise-free ceiling and
+    NOT shippable. Insight: NV-tuned kernels leave big perf on the table on MI350.
+- **Difficulty**: hard (🔴 AMD-native)
 
 ### C1. Fused softmax (Triton)
 - **Image**: pytorch · **GPUs**: 1
