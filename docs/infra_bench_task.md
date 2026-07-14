@@ -392,18 +392,29 @@ Root-cause a failing / broken AI-infra scenario and fix it.
 These are the tasks that make InfraBench AMD-specific rather than a generic GPU
 benchmark. Each is tagged with the category it counts toward.
 
-### F1. Hipify a CUDA kernel to HIP (→ Kernel Implementation) 🔴
-- **Image**: pytorch · **GPUs**: 1
-- **Task**: given a `.cu` CUDA kernel + host harness, port it to HIP so it
-  compiles with hipcc and runs on MI350 (use `hipify-perl`/`hipify-clang` then
-  fix the residue: warp size 64, unsupported intrinsics, `__shfl` semantics).
-- **Verifiable**: HIP binary compiles, runs on GPU, and matches the CUDA
-  reference output (verifier has the reference results) on fresh inputs.
-- **Hack risk**: reimplement in torch / skip the kernel → verifier requires the
-  compiled HIP kernel to be the code path; forbids torch fallback.
-- **Note**: warp-size-64 correctness (a classic CUDA→HIP porting bug) is a
-  great non-hackable signal — a naive hipify that assumes 32 fails.
-- **Difficulty**: medium–hard
+### F1. Hipify PointNet++ CUDA ops to ROCm (→ Debug Triage) 🔴 ✅ BUILT+VALIDATED
+- Package: `infra-bench/tasks/pointnet2-hipify/` · Image:
+  `rocm/pytorch:rocm7.2.4_ubuntu24.04_py3.12_pytorch_release_2.10.0` · GPUs: 1
+- **REAL, not injected**: the actual `pointnet2_ops` extension from
+  erikwijmans/Pointnet2_PyTorch (FPS, ball-query, grouping, gather, three-NN
+  interp) — hand-written CUDA that fails to build on ROCm as-is.
+- **The authentic bug**: setup.py passes nvcc-only flags `-Xfatbin
+  -compress-all` that ROCm's clang++/hipcc reject. (PyTorch's CUDAExtension
+  auto-hipifies the .cu sources + CUDA API on ROCm, so removing those flags is
+  the fix — a genuine "get an old CUDA repo building on ROCm" task.)
+- **Deliverable**: fix the source tree in place (editable install pattern).
+- **Hardened 2-tier verification (strict numerical gate)**:
+  1. build: `pip install -e` must succeed.
+  2. numerics: 8 checks vs. captured references (`tests/pointnet2_reference.pt`,
+     verifier-only) — 6 op-level (index kernels bitwise-exact, float ≤1e-3) +
+     e2e PointNet++ SA+FP forward output (bitwise-exact) + gradient-flow.
+     All references are bitwise-reproducible under fixed seed (verified across
+     processes). Can't be faked by stubbing.
+- **✅ Oracle validated via harbor (reward 1.0, 1m50s)**: all 8 checks
+  `max_abs_diff=0`. Negative case (broken source) → reward 0 (build fails),
+  confirming the task discriminates.
+- **Difficulty**: medium (get-it-building-and-correct; the diagnosis of the
+  clang++ flag rejection is the real skill)
 
 ### F2. Tune a GEMM with hipBLASLt (→ Kernel Tuning) 🔴
 - **Image**: pytorch · **GPUs**: 1
