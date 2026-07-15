@@ -5,7 +5,7 @@ must pass the Terminal-Bench bar: **specified / verifiable / solvable /
 not-hackable** (agent can't win by reading the solution, editing tests, or
 faking output).
 
-## Status — 8 tasks BUILT + oracle-validated on harbor (all 5 categories covered)
+## Status — 10 tasks BUILT + oracle-validated on harbor (all 5 categories + compiler-optimization covered)
 
 | Task package | Category | Gate | Oracle |
 |---|---|---|---|
@@ -13,10 +13,18 @@ faking output).
 | `gemma4-sglang-serving-opt` | Model Deployment | TTFT >10% & thrpt >2% & GSM8K≥0.955 vs baseline | ✅ 1.0 |
 | `llm-fp8-quantize` | Model Deployment | FP8 thrpt ≥10% > BF16 & GSM8K within 3 pts & FP8 declared | ✅ 1.0 |
 | `hotspot-analysis-torch-profiler` | Profiling | top-kernel name + %±5 vs re-profile | ✅ 1.0 |
-| `mem-bandwidth-bench` | Profiling | read-only HBM BW ≥5.0 TB/s + real GPU kernels (rocprofv3) | ✅ 1.0 |
+| `mem-bandwidth-bench` | Profiling | grader-computed read-only HBM BW ≥5.0 TB/s + HBM traffic, both from ONE rocprofv3 FETCH_SIZE pass (same-run fabrication-proof) | ✅ 1.0 |
 | `gemma4-gemm-tuning` | Kernel Tuning | aggregate GEMM latency ≥3% faster (aiter tuner) | ✅ 1.0 |
 | `engram-triton-kernel` | Kernel Implementation | Triton matches ref+tilelang, ≥60% faster than tilelang | ✅ 1.0 |
-| `pointnet2-hipify` | Debug Triage | CUDA→ROCm build + 8 numeric checks vs reference | ✅ 1.0 |
+| `flydsl-cdna4-preshuffle-gemm` | Kernel Implementation | CDNA4 MFMA(16,16,32) port correct & ≥15% faster + timed-path ISA proof | ✅ 1.0 |
+| `llvm-simple-constant-propagation` | Compiler Optimization | general const-prop pass on grade-time randomized IR | ✅ 1.0 |
+| `pointnet2-hipify` | Debug Triage | CUDA→ROCm build + numerics + compiled _ext & all-9-op custom-kernel trace | ✅ 1.0 |
+
+All 10 oracles re-run locally via `run.sh -a oracle` (concurrency 4) on
+2026-07-14 → **10/10 reward 1.0** (job
+`jobs/oracle-all-2026-07-14__10-56-38`). `flydsl-cdna4-preshuffle-gemm` and
+`llvm-simple-constant-propagation` were contributed by collaborator (toqiu) via
+PR #1 and are now validated in this environment.
 
 **Shared infra (all validated):** GPU-pool allocator (`claim_gpu.sh` flock +
 `pin_gpu.sh` BASH_ENV auto-pin) for safe concurrent trials; models mounted RO
@@ -579,17 +587,20 @@ benchmark. Each is tagged with the category it counts toward.
     margin vs timing noise) + all shapes err_ratio ≤ 0.05.
 - **Difficulty**: hard
 
-### F4. FlyDSL kernel implementation (→ Kernel Implementation) 🔴
-- **Image**: pytorch (+ FlyDSL toolchain baked in) · **GPUs**: 1
-- **Task**: implement a specified kernel (e.g. a reduction or elementwise-fused
-  op) in FlyDSL; it must compile through the FlyDSL toolchain and match a
-  reference.
-- **Verifiable**: compiles via FlyDSL, runs on GPU, allclose vs reference on
-  fresh inputs.
-- **Hack risk**: bypass FlyDSL with a hand HIP kernel or torch → verifier
-  requires the FlyDSL-generated artifact to be the code path.
-- **Open Q**: confirm FlyDSL toolchain availability/version to bake into image.
-- **Difficulty**: hard
+### F4. FlyDSL CDNA4 preshuffle GEMM port (→ Kernel Implementation) 🔴 ✅ BUILT+VALIDATED
+- Package: `infra-bench/tasks/flydsl-cdna4-preshuffle-gemm/` · **GPUs**: 1 (pool)
+  · contributed by collaborator (toqiu) via PR #1.
+- **Task**: port FlyDSL's 8192³ preshuffled fp16 GEMM from the CDNA3 MFMA atom
+  `MFMA(16,16,16, Float16)` to the CDNA4 atom `MFMA(16,16,32, Float16)` in
+  `/app/04-preshuffle_gemm.py`, preserving correctness and hitting ≥15% speedup.
+- **Verifiable**: grader benchmarks original vs. candidate, gates on
+  `correct && candidate_median <= original * (1 - 0.15)` (env
+  `PRESHUFFLE_MIN_PERF_SPEEDUP`, default 0.15) plus accuracy tolerance.
+- **Hack risk**: keep the CDNA3 atom / fake numbers → grader re-benchmarks both
+  paths itself and requires the CDNA4 atom in the active tiled MMA def.
+- **✅ Oracle validated via harbor (2026-07-14, reward 1.0)** in job
+  `jobs/oracle-all-2026-07-14__10-56-38`.
+- **Difficulty**: medium
 
 ### F5. aiter / fused-op integration for serving (→ Model Deployment) 🔴
 - **Image**: sglang · **GPUs**: 1
@@ -620,6 +631,25 @@ benchmark. Each is tagged with the category it counts toward.
   MFMA instructions issued.
 - **Hack risk**: unrelated speedup → MFMA-usage + speedup gates.
 - **Difficulty**: hard
+
+---
+
+## G. Compiler Optimization
+
+### G1. LLVM simple constant-propagation pass ⚪ ✅ BUILT+VALIDATED
+- Package: `infra-bench/tasks/llvm-simple-constant-propagation/` · **GPUs**: 0
+  · contributed by collaborator (toqiu) via PR #1.
+- **Task**: implement `myConstantPropagation(llvm::Function&)` in
+  `/app/your_turn/populate_function.cpp` — scan for integer binary ops with two
+  `ConstantInt` operands, fold them, replace uses, and erase the old
+  instruction (based on `LLVM-Code-Generation/ch4/simple_cst_propagation`).
+- **Verifiable**: grader builds the pass and checks the produced IR folds the
+  expected constants across the required opcodes.
+- **Hack risk**: hard-code output IR → grader compiles + runs the pass on the
+  LLVM module rather than trusting emitted text.
+- **✅ Oracle validated via harbor (2026-07-14, reward 1.0)** in job
+  `jobs/oracle-all-2026-07-14__10-56-38`.
+- **Difficulty**: medium
 
 ---
 

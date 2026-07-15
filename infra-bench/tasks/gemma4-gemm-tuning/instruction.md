@@ -29,7 +29,7 @@ python3 csrc/gemm_a16w16/gemm_a16w16_tune.py \
 triton, skinny, torch). `triton,opus` tunes in a few minutes and is sufficient
 to beat the default. NOTE: `flydsl` searches thousands of candidates per shape
 and can take 4+ minutes PER shape — avoid it (and `--with-hipblaslt`, also very
-slow) unless you have a large time budget; neither is required to succeed.
+slow) unless you have a large time budget;
 
 ## Deliverable
 
@@ -44,9 +44,8 @@ all shapes:
 - **your config** = `/app/gemma4_tuned_gemm.csv`.
 
 To pass, the **aggregate (summed) latency across all shapes** with your config
-must be at least **5% faster** than the baseline, and every shape must remain
-numerically correct (err_ratio ≤ 0.05). Individual shapes need not all improve —
-only the total must.
+must be at least **3% faster** than the baseline, and every shape must remain
+numerically correct (err_ratio ≤ 0.05).
 
 Notes:
 - The GPU assigned to this container is pre-selected; use the default device.
