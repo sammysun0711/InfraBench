@@ -47,16 +47,7 @@ CUSTOM_HEADERS="Ocp-Apim-Subscription-Key: ${AMD_LLM_GATEWAY_KEY}, user: ${NTID}
 # Re-export after sourcing (setup_env.sh must not clobber these).
 export INFRABENCH_GPU_POOL_HOST INFRABENCH_GPU_COUNT INFRABENCH_MODELS_HOST
 
-# --- default target: all task packages under tasks/ -------------------------
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEFAULT_PATH_ARGS=()
-if [[ "$*" != *"-p"* && "$*" != *"--path"* ]]; then
-  for t in "$SCRIPT_DIR"/tasks/*/; do
-    [[ -f "$t/task.toml" ]] && DEFAULT_PATH_ARGS+=(-p "$t")
-  done
-fi
-
-# --- run --------------------------------------------------------------------
+# --- agent args -------------------------------------------------------------
 # oracle agent ignores model/gateway args; only pass them for real agents.
 AGENT_ARGS=(-a "$AGENT")
 if [[ "$AGENT" != "oracle" ]]; then
@@ -67,7 +58,70 @@ if [[ "$AGENT" != "oracle" ]]; then
   )
 fi
 
-exec harbor run \
-  "${AGENT_ARGS[@]}" \
-  "${DEFAULT_PATH_ARGS[@]}" \
-  "$@"
+# --- run --------------------------------------------------------------------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# If the caller passed an explicit -p/--path, run a single harbor job verbatim.
+# Scan args token by token (not a substring match on "$*") so an argument VALUE
+# that merely contains "-p" (e.g. a model name) can't flip us out of all-task
+# mode.
+explicit_path=false
+for arg in "$@"; do
+  case "$arg" in
+    -p|--path|--path=*) explicit_path=true; break ;;
+  esac
+done
+if [[ "$explicit_path" == true ]]; then
+  exec harbor run "${AGENT_ARGS[@]}" "$@"
+fi
+
+# No -p given → run EVERY task package under tasks/ as its own harbor job.
+# harbor's `run` keeps only the LAST -p when several are passed, and its dataset
+# model is registry-based (no clean offline path), so we launch one single-task
+# harbor job per package and run up to INFRA_PARALLEL of them concurrently. The
+# GPU-pool allocator (flock per card) makes concurrent trials safe: each job's
+# trial claims its own GPU.
+JOB_NAME="${JOB_NAME:-$(date +%Y-%m-%d__%H-%M-%S)}"
+JOBS_DIR="${SCRIPT_DIR}/jobs/${JOB_NAME}"
+PARALLEL="${INFRA_PARALLEL:-4}"
+mkdir -p "$JOBS_DIR"
+echo "[run.sh] running all tasks under tasks/ into ${JOBS_DIR} (parallel=${PARALLEL})"
+
+for t in "$SCRIPT_DIR"/tasks/*/; do
+  [[ -f "$t/task.toml" ]] || continue
+  name="$(basename "$t")"
+  # throttle: wait if PARALLEL jobs already running. `wait -n` returns the
+  # finished job's exit status; a failed harbor job must NOT abort the launcher
+  # under `set -e`, so swallow it (per-task success is read from reward.txt).
+  while (( $(jobs -rp | wc -l) >= PARALLEL )); do wait -n || true; done
+  echo "[run.sh] launching TASK: ${name}"
+  # Each task gets its OWN --job-name (= task name) so concurrent jobs don't
+  # collide on harbor's auto timestamped job dir. Output lands in
+  # ${JOBS_DIR}/${name}/.
+  ( harbor run "${AGENT_ARGS[@]}" -p "$t" -o "$JOBS_DIR" --job-name "$name" "$@" \
+      > "${JOBS_DIR}/${name}.runlog" 2>&1 ) &
+done
+# Wait for every remaining job; ignore nonzero so we always reach the summary.
+wait || true
+echo "[run.sh] all tasks done → ${JOBS_DIR}"
+echo "[run.sh] rewards:"
+total=0; passed=0
+for r in "${JOBS_DIR}"/*/*/verifier/reward.txt; do
+  [[ -f "$r" ]] || continue
+  val="$(cat "$r")"
+  echo "  $(basename "$(dirname "$(dirname "$r")")"): ${val}"
+  total=$((total + 1))
+  [[ "$val" == "1" ]] && passed=$((passed + 1))
+done
+echo "[run.sh] ${passed}/${total} passed"
+
+# Exit nonzero if any task failed or no rewards were produced, so CI/automation
+# does not treat a failed (or empty) benchmark sweep as success.
+if (( total == 0 )); then
+  echo "[run.sh] ERROR: no reward files found — sweep produced no results" >&2
+  exit 1
+fi
+if (( passed != total )); then
+  echo "[run.sh] FAILED: $((total - passed)) task(s) did not pass" >&2
+  exit 1
+fi

@@ -4,6 +4,7 @@
 
 import json
 import os
+import secrets
 from pathlib import Path
 import shutil
 import subprocess
@@ -29,6 +30,92 @@ FORBIDDEN_SOURCE_PATTERNS = (
     "execl",
     "std::filesystem",
 )
+
+
+_MASK = (1 << 32) - 1
+
+
+def _to_signed(u):
+    u &= _MASK
+    return u - (1 << 32) if u >= (1 << 31) else u
+
+
+def _sdiv(a, b):
+    # signed division truncated toward zero (matches APInt::sdiv / LLVM sdiv)
+    q = abs(a) // abs(b)
+    return -q if (a < 0) != (b < 0) else q
+
+
+def _apply(op, u, operand):
+    """Apply one 32-bit binary op to unsigned accumulator `u`; return unsigned."""
+    if op == "add":
+        return (u + operand) & _MASK
+    if op == "sub":
+        return (u - operand) & _MASK
+    if op == "mul":
+        return (u * operand) & _MASK
+    if op == "sdiv":
+        return _to_signed(_sdiv(_to_signed(u), _to_signed(operand))) & _MASK
+    if op == "udiv":
+        return (u // operand) & _MASK
+    if op == "shl":
+        return (u << operand) & _MASK
+    if op == "lshr":
+        return (u >> operand) & _MASK
+    if op == "ashr":
+        return (_to_signed(u) >> operand) & _MASK
+    if op == "and":
+        return u & operand & _MASK
+    if op == "or":
+        return (u | operand) & _MASK
+    if op == "xor":
+        return (u ^ operand) & _MASK
+    raise ValueError(op)
+
+
+def _rand_operand(op):
+    # shift amounts must stay in 0..31 (>= bitwidth is poison in LLVM); divisors
+    # must be nonzero. Everything else is a full random 32-bit value.
+    if op in ("shl", "lshr", "ashr"):
+        return secrets.randbelow(31) + 1
+    if op in ("sdiv", "udiv"):
+        return secrets.randbelow(4094) + 2
+    return secrets.randbelow(4096) + 1
+
+
+def _generate_random_cases(n=6):
+    """Grade-time randomized fold chains. Names, opcodes, and operands are fresh
+    each run, so a solution cannot branch on Function::getName() or hardcode
+    return values — it must implement a real general constant-propagation pass."""
+    ops = ["add", "sub", "mul", "sdiv", "udiv", "shl", "lshr", "ashr", "and", "or", "xor"]
+    cases = []
+    for _ in range(n):
+        name = "rnd_" + secrets.token_hex(6)
+        chain_len = secrets.randbelow(3) + 2  # 2..4 ops
+        # seed the accumulator with two constants
+        op0 = secrets.choice(ops)
+        a0 = secrets.randbelow(4096) + 1
+        b0 = _rand_operand(op0)
+        acc = _apply(op0, a0, b0)
+        lines = [f"  %v1 = {op0} i32 {_to_signed(a0)}, {_to_signed(b0)}"]
+        prev = "%v1"
+        for i in range(1, chain_len):
+            op = secrets.choice(ops)
+            operand = _rand_operand(op)
+            acc = _apply(op, acc, operand)
+            nxt = f"%v{i + 1}"
+            lines.append(f"  {nxt} = {op} i32 {prev}, {_to_signed(operand)}")
+            prev = nxt
+        body = "\n".join(lines)
+        ir = (
+            f"define i32 @{name}() {{\n"
+            f"entry:\n"
+            f"{body}\n"
+            f"  ret i32 {prev}\n"
+            f"}}\n"
+        )
+        cases.append({"name": name, "ir": ir, "expected": _to_signed(acc), "changed": True})
+    return cases
 
 
 def _run(cmd, *, cwd=None, timeout=120):
@@ -63,9 +150,21 @@ def _find_llvm_config():
     raise RuntimeError("llvm-config not found")
 
 
-def _write_driver():
-    DRIVER.write_text(
-        textwrap.dedent(
+def _cpp_escape_ir(ir):
+    return ir.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+def _write_driver(random_cases):
+    random_calls = "\n".join(
+        '              OK &= expectReturn("{name}", "{ir}", {exp}LL, {chg});'.format(
+            name=c["name"],
+            ir=_cpp_escape_ir(c["ir"]),
+            exp=c["expected"],
+            chg="true" if c["changed"] else "false",
+        )
+        for c in random_cases
+    )
+    template = textwrap.dedent(
             r'''
             #include "llvm/AsmParser/Parser.h"
             #include "llvm/IR/Constants.h"
@@ -258,6 +357,7 @@ def _write_driver():
                   "  ret i32 %b\n"
                   "}\n",
                   715827882, true);
+              // __RANDOM_CASES__ (grade-time randomized fold chains)
               OK &= expectNoFoldDivZero();
               OK &= expectNoFoldNonConstant();
               if (!OK)
@@ -267,7 +367,9 @@ def _write_driver():
             }
             '''
         )
-    )
+    marker = "// __RANDOM_CASES__ (grade-time randomized fold chains)"
+    assert marker in template, "random-cases marker missing from driver template"
+    DRIVER.write_text(template.replace(marker, random_calls.strip()))
 
 
 def _build_sample():
@@ -323,7 +425,14 @@ def main():
         checks.append({"check": "sample_project_builds", "ok": False, "why": "source missing or failed integrity check"})
 
     if checks[-1]["ok"]:
-        _write_driver()
+        random_cases = _generate_random_cases()
+        checks.append({
+            "check": "random_cases_generated",
+            "ok": len(random_cases) > 0,
+            "why": f"{len(random_cases)} grade-time randomized fold chains: "
+                   + ", ".join(c["name"] for c in random_cases),
+        })
+        _write_driver(random_cases)
         build_driver = _build_driver()
         checks.append(
             {

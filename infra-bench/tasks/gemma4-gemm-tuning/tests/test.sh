@@ -5,15 +5,22 @@
 set -u
 
 mkdir -p /logs/verifier
-UNTUNED=/app/gemma4_untuned_gemm.csv
+# Trusted shape list ships with the verifier in /tests (uploaded only at grade
+# time), NOT the agent-writable /app copy — so an agent cannot shrink or alter
+# the benchmark workload before grading. /app still has its copy for reference.
+UNTUNED=/tests/gemma4_untuned_gemm.csv
 AGENT=/app/gemma4_tuned_gemm.csv
 
+if [ ! -f "$UNTUNED" ]; then
+  echo "[verifier] trusted shape list $UNTUNED not found"
+  echo 0 > /logs/verifier/reward.txt; exit 0
+fi
 if [ ! -f "$AGENT" ]; then
   echo "[verifier] agent tuned config $AGENT not found"
   echo 0 > /logs/verifier/reward.txt; exit 0
 fi
 
-# Both runs benchmark the SAME full shape list (/app/gemma4_untuned_gemm.csv);
+# Both runs benchmark the SAME full shape list (the trusted /tests copy);
 # baseline vs tuned is selected purely by AITER_CONFIG_GEMM_BF16.
 
 # 1) Baseline: point config at a nonexistent file → production op uses defaults.

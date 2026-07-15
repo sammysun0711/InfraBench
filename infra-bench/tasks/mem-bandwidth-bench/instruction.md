@@ -25,27 +25,38 @@ Guidance for a good measurement:
 ## Deliverable
 
 Create an executable script at **`/app/measure_bandwidth.sh`** that builds
-(if needed) and runs your benchmark, and prints exactly one line to stdout:
+(if needed) and runs your benchmark, and prints these lines to stdout:
 
 ```
 HBM_BANDWIDTH_GBPS=<number>
+buffer_bytes=<integer>
 ```
 
-where `<number>` is the measured sustained HBM **read** bandwidth in GB/s. You
+where `<number>` is the measured sustained HBM **read** bandwidth in GB/s and
+`<integer>` is the number of bytes your timed kernel reads in ONE pass over the
+buffer (the working-set size the bandwidth is computed against). You
 may put your kernel source anywhere under `/app` and compile it with `hipcc`
 (target `--offload-arch=gfx950`). The script must finish in a couple of minutes.
 
 ## How you are graded
 
-The grader runs `/app/measure_bandwidth.sh` itself (under a GPU profiler) and:
-1. parses the `HBM_BANDWIDTH_GBPS=` value,
-2. requires it to reach **>= 5000 GB/s (5.0 TB/s)** — the achievable read-only
-   HBM bandwidth on this GPU (a copy/unsaturated kernel falls short) — while
-   staying below the physical ceiling (fabricated numbers are rejected), and
-3. confirms your program actually dispatched GPU kernels (a hardcoded number
-   with no real kernel will fail).
+The grader does **not** trust your printed bandwidth. It runs
+`/app/measure_bandwidth.sh` **once** under a GPU hardware memory counter
+(`rocprofv3 --pmc FETCH_SIZE`) and, from that SAME execution:
+1. reads your declared `buffer_bytes=` and requires a cache-busting working set
+   (**>= 2 GiB**),
+2. finds your dominant streaming kernel and requires it to run as a real timed
+   loop (many dispatches),
+3. **computes bandwidth itself** as `buffer_bytes / median_kernel_time` the achievable
+   read-only HBM bandwidth on this GPU (a copy/unsaturated kernel falls short) —
+   while staying below the physical ceiling,
+4. cross-checks that your printed `HBM_BANDWIDTH_GBPS` tracks its own computation
+   (so a hardcoded number is rejected), and
+5. requires the SAME timed kernel to have actually fetched a large fraction of
+   your declared working set from HBM (`FETCH_SIZE`).
 
-So your reported number must come from a genuine, well-optimized on-GPU
+
+Your reported number must come from a genuine, well-optimized on-GPU
 read-bandwidth measurement.
 
 Notes:
