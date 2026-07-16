@@ -5,7 +5,7 @@ must pass the Terminal-Bench bar: **specified / verifiable / solvable /
 not-hackable** (agent can't win by reading the solution, editing tests, or
 faking output).
 
-## Status — 10 tasks BUILT + oracle-validated on harbor (all 5 categories + compiler-optimization covered)
+## Status — 17 tasks BUILT (all 5 categories + compiler-optimization + algorithm-implementation covered)
 
 | Task package | Category | Gate | Oracle |
 |---|---|---|---|
@@ -14,17 +14,29 @@ faking output).
 | `llm-fp8-quantize` | Model Deployment | FP8 thrpt ≥10% > BF16 & GSM8K within 3 pts & FP8 declared | ✅ 1.0 |
 | `hotspot-analysis-torch-profiler` | Profiling | top-kernel name + %±5 vs re-profile | ✅ 1.0 |
 | `mem-bandwidth-bench` | Profiling | grader-computed read-only HBM BW ≥5.0 TB/s + HBM traffic, both from ONE rocprofv3 FETCH_SIZE pass (same-run fabrication-proof) | ✅ 1.0 |
+| `gluon-a8w8-mfma-att` | Profiling | grader recomputes MFMA eff from agent's rocprofv3 ATT trace; real MFMA-in-loop + eff >90% + agent-matches-recompute | ✅ 1.0 |
 | `gemma4-gemm-tuning` | Kernel Tuning | aggregate GEMM latency ≥3% faster (aiter tuner) | ✅ 1.0 |
+| `triton-matmul-tuning` | Kernel Tuning | tune autotune configs (incl. K-heavy 1024×1024×16384) → ≥1.2× vs hidden weak baseline, kernel body unchanged, correct | ✅ 1.0 |
+| `dwconv3d-occupancy` | Kernel Tuning | reduce register-bound depthwise-conv3d VGPR (occupancy) + ≥10% faster + correct, verifier self-measures vs frozen original | ✅ 1.0 |
 | `engram-triton-kernel` | Kernel Implementation | Triton matches ref+tilelang, ≥60% faster than tilelang | ✅ 1.0 |
 | `flydsl-cdna4-preshuffle-gemm` | Kernel Implementation | CDNA4 MFMA(16,16,32) port correct & ≥15% faster + timed-path ISA proof | ✅ 1.0 |
+| `paged-attention-hd256` | Kernel Implementation | port HIP paged-attention hd128→hd256, correct vs torch + ≤1.5× aiter latency | ✅ 1.0 |
+| `gemm-fp8-ptpc-quant` | Kernel Implementation | convert Gluon split-K FP8 GEMM block-wise→PTPC per-token quant, correct vs torch + efficiency floor | ✅ 1.0 |
 | `llvm-simple-constant-propagation` | Compiler Optimization | general const-prop pass on grade-time randomized IR | ✅ 1.0 |
+| `cute-layout-composition` | Algorithm Implementation | CuTe `composition` correct vs independent ref on 64 cases (task + CUTLASS py/cpp), triple-checked | ✅ 1.0 |
 | `pointnet2-hipify` | Debug Triage | CUDA→ROCm build + numerics + compiled _ext & all-9-op custom-kernel trace | ✅ 1.0 |
+| `vllm-aiter-debug` | Debug Triage | fix TheRock aiter hipconfig crash; CK FMHA prefill in torch profile + AITER ≥1.5× TTFT & ≥2× throughput vs AITER=0 | ✅ 1.0 |
 
-All 10 oracles re-run locally via `run.sh -a oracle` (concurrency 4) on
-2026-07-14 → **10/10 reward 1.0** (job
-`jobs/oracle-all-2026-07-14__10-56-38`). `flydsl-cdna4-preshuffle-gemm` and
-`llvm-simple-constant-propagation` were contributed by collaborator (toqiu) via
-PR #1 and are now validated in this environment.
+All 17 tasks pass their oracle (`run.sh -a oracle`, reward 1.0) in this
+environment. The original 10 GPU/ROCm oracles were validated 2026-07-14
+(`jobs/oracle-all-2026-07-14__10-56-38`); `cute-layout-composition`,
+`gluon-a8w8-mfma-att`, `dwconv3d-occupancy`, `triton-matmul-tuning`,
+`vllm-aiter-debug`, `paged-attention-hd256`, and `gemm-fp8-ptpc-quant` were
+validated 2026-07-15/16. Collaborator **toqiu** contributed
+`flydsl-cdna4-preshuffle-gemm`, `llvm-simple-constant-propagation`,
+`cute-layout-composition`, `gemm-fp8-ptpc-quant`, `paged-attention-hd256`, and the
+`triton-matmul-tuning` base (merged 2026-07-16 with xisun's K-heavy shape +
+kernel-body-unchanged check).
 
 **Shared infra (all validated):** GPU-pool allocator (`claim_gpu.sh` flock +
 `pin_gpu.sh` BASH_ENV auto-pin) for safe concurrent trials; models mounted RO
@@ -328,6 +340,28 @@ Given a workload, use ROCm profilers to find and report the truth.
   quantified share matching ground truth.
 - **Difficulty**: hard
 
+### B5. MFMA utilization of an a8w8 Gluon kernel via rocprof ATT 🔴 ✅ BUILT+VALIDATED
+- Package: `infra-bench/tasks/gluon-a8w8-mfma-att/` · Image:
+  `rocm/pytorch:rocm7.2.4...2.10.0` (+ Triton built from tag
+  `gfx950-tutorial-v1.1` + ATT decoder 0.1.6) · **GPUs**: 1 (pool). Based on
+  `ROCm/gfx950-gluon-tutorials` pinned at commit `064347695463`.
+- **Task**: profile the a8w8 (FP8) Gluon GEMM (`kernels/gemm/intra_wave/a8w8`,
+  config `llir+force-agpr+amdgcnas`, K=8192) with `rocprofv3 --att`, decode the
+  thread trace, and write the MFMA (matrix-core) utilization analysis to
+  `/app/mfma_analysis.json`. MFMA eff = MFMA cycles in loop / avg iteration
+  duration — cycle-based, frequency-independent (see repo `docs/mfma_efficiency.md`).
+- **Verifiable**: verifier re-decodes the agent's ATT `ui_` dir with its OWN
+  trusted `process_json.py` copy (in `/tests`) and gates on: real ATT trace
+  (code.json + wave files), MFMA present in loop (`mfma_count>0`), grader-recomputed
+  eff **>90%** (a8w8 optimized config sustains near-peak; oracle 99.53%), and the
+  agent's reported eff matching the recompute (±5 pts).
+- **Hack risk**: fabricate the number / trace → att_trace_present +
+  agent-matches-recompute fail (adversarially verified); edit the repo analyzer →
+  verifier uses its own trusted copy.
+- **✅ Oracle validated via harbor (2026-07-15, reward 1.0)**; MFMA eff reproduces
+  at 99.53% across runs (first cold run 93.95%, still > gate).
+- **Difficulty**: hard
+
 ---
 
 ## C. Kernel Implementation
@@ -401,6 +435,35 @@ Write a correct GPU kernel (HIP or Triton) matching a reference.
   → inspection/trace gate on the hot path.
 - **Difficulty**: hard
 
+### C5. Port a HIP paged-attention kernel from head-dim 128 → 256 🔴 ✅ BUILT+VALIDATED
+- Package: `infra-bench/tasks/paged-attention-hd256/` (author toqiu) · **GPUs**: 1
+  (pool).
+- **Task**: update a custom HIP paged-attention kernel (`/app/.../pa.cpp`) from
+  head dimension 128 to 256 on MI350, keeping correctness against a Torch
+  reference and clearing a performance floor vs aiter's paged-attention.
+- **Verifiable**: builds the extension; correctness vs Torch on multiple kv
+  shapes; **latency ≤ 1.5× aiter** (verifier times both).
+- **Hack risk**: no-pyhip source check; verifier self-measures vs aiter; correct
+  outputs required on fresh shapes.
+- **✅ Oracle validated via harbor (2026-07-16, reward 1.0)**: agent 35.1µs vs
+  aiter 64.6µs (0.54× → 1.84× faster).
+- **Difficulty**: hard
+
+### C6. Convert a Gluon FP8 GEMM from block-wise to per-token (PTPC) quant 🔴 ✅ BUILT+VALIDATED
+- Package: `infra-bench/tasks/gemm-fp8-ptpc-quant/` (author toqiu) · **GPUs**: 1
+  (pool).
+- **Task**: convert a Gluon split-K FP8 GEMM from block-wise weight quantization
+  (`[N//128, K//128]` per-K-block scale) to per-token / **PTPC** weight
+  quantization (`[N,1]` per-output-channel scale applied once after K
+  accumulation), matching a Torch reference and clearing an efficiency floor vs a
+  frozen Gluon reference.
+- **Verifiable**: correctness vs bf16 Torch ref (calc_diff ≤ 1e-3) + efficiency
+  floor vs the frozen reference kernel.
+- **Hack risk**: verifier self-measures against a frozen reference; correctness
+  gate blocks a fast-but-wrong quant.
+- **✅ Oracle validated via harbor (2026-07-16, reward 1.0)**.
+- **Difficulty**: hard
+
 ---
 
 ## D. Kernel Tuning
@@ -444,6 +507,51 @@ staying correct.
 - **Verifiable**: correctness + speedup ≥ threshold; verifier times it.
 - **Hack risk**: unrelated micro-opt that doesn't generalize → fixed speedup
   gate with repeats.
+- **Difficulty**: hard
+
+### D5. Tune Triton matmul autotune configs (incl. a K-heavy shape) ⚪ ✅ BUILT+VALIDATED
+- Package: `infra-bench/tasks/triton-matmul-tuning/` (author toqiu; merged with
+  xisun's variant on 2026-07-16) · Image: `rocm/pytorch:rocm7.2.4...2.10.0` with
+  **Triton 3.7.1 pinned** · **GPUs**: 1 (pool). Target: Triton's
+  `03-matrix-multiplication.py` tutorial kernel.
+- **Task**: restore + tune `get_hip_autotune_config()` for MI350 (BLOCK sizes,
+  num_stages, num_warps, `matrix_instr_nonkdim`, larger/K-heavy-friendly tiles
+  per the ROCm autotuning guide). Kernel body must stay unchanged.
+- **Verifiable**: verifier pins Triton 3.7.1 + gfx950, runs static config-quality
+  checks, a **kernel_body_unchanged** AST check (agent `matmul_kernel` matches a
+  hash-frozen untuned reference in `/opt/reference`), correctness on several
+  shapes, and benchmarks the agent vs a hidden weak 1-config baseline over 3
+  shapes incl. the **K-heavy 1024×1024×16384** — gate **≥1.2× aggregate speedup**.
+- **Hack risk**: rewrite the kernel → body-unchanged check; fake numbers →
+  verifier self-measures; slow the baseline → weak baseline is hash-frozen
+  (`/opt/reference_matmul.sha256`); fast-but-wrong → correctness gate.
+- **✅ Oracle validated via harbor (2026-07-16, reward 1.0)**: 3 bench shapes;
+  untuned 333.6µs → tuned 199.5µs = **1.67× aggregate** (the K-heavy shape lifts
+  the win from ~1.29× on square-only shapes). Merged from two same-named tasks:
+  toqiu's env/checks + xisun's K-heavy shape + kernel-body-unchanged check.
+- **Difficulty**: medium
+
+### D6. Improve occupancy of a register-bound depthwise conv3d kernel 🔴 ✅ BUILT+VALIDATED
+- Package: `infra-bench/tasks/dwconv3d-occupancy/` · Image:
+  `rocm/pytorch:rocm7.2.4...2.10.0` (stock hipcc + rocprofv3, no build) ·
+  **GPUs**: 1 (pool). Source: sammysun0711/rocprofiler-sdk-samples
+  `depthwise_conv3d/`.
+- **Task**: the agent is given the ORIGINAL BF16 depthwise-conv3d HIP kernel
+  (`/app/kernels/conv_depthwise3d_hip.cpp`) whose "batch all `ds_read`, then all
+  `v_fmac`" pattern keeps many values live → 155 VGPR → low occupancy. Restructure
+  it (e.g. row-interleaved read+MAC with `__builtin_amdgcn_sched_group_barrier`
+  hints) to cut VGPR pressure and raise occupancy. rocprofv3 (ATT + PMC counters)
+  is available for the deep-dive.
+- **Verifiable**: verifier builds + benchmarks a FROZEN trusted original (`/tests`)
+  and the agent's kernel itself, gating on: builds, correctness PASS (CPU fp32
+  ref, atol=rtol=0.02), **VGPR reduced** (agent ≤120 vs original 155 — from the
+  compiled ISA, the occupancy proof), and **≥10% TFLOPS** improvement.
+- **Hack risk**: fast-but-wrong rewrite → correctness gate (adversarially verified:
+  a gutted kernel with 0 VGPR / "1098 TFLOPS" fails correctness); slow the
+  baseline → original is a trusted `/tests` copy; fake numbers → verifier
+  self-measures.
+- **✅ Oracle validated via harbor (2026-07-15, reward 1.0)**: VGPR 155→86,
+  27.2 → 31.2 TFLOPS (**+14.9%**); reference SGB kernel.
 - **Difficulty**: hard
 
 ---
@@ -490,6 +598,28 @@ Root-cause a failing / broken AI-infra scenario and fix it.
 - **Hack risk**: stub the op in Python → verifier requires the compiled
   extension to be the code path and correct on GPU.
 - **Difficulty**: medium
+
+### E5. Fix vLLM+AITER startup crash on a TheRock ROCm build 🔴 ✅ BUILT+VALIDATED
+- Package: `infra-bench/tasks/vllm-aiter-debug/` · Image:
+  `rocm/vllm:rocm7.13.0_gfx950-dcgpu_...vllm_0.19.1` (TheRock-built ROCm; ROCm is
+  pip wheels under `/opt/python/.../_rocm_sdk_*`, **no `/opt/rocm`**) · **GPUs**: 1
+  (pool) + `/models` RO. Model `/models/Qwen3.5-0.8B`.
+- **Task**: serving Qwen3.5-0.8B with `VLLM_ROCM_USE_AITER=1` / `ROCM_AITER_FA`
+  crashes at engine startup. Root cause: aiter's `get_hip_version()` runs
+  `/opt/rocm/bin/hipconfig` which doesn't exist here → empty output →
+  `split()[-1]` → `IndexError`. Agent diagnoses (provided failing log + rocprof/
+  torch-profiler) and fixes (e.g. `ln -s $ROCM_PATH /opt/rocm`).
+- **Verifiable**: verifier self-launches both servers (via `vllm serve` +
+  graceful SIGTERM so VRAM cycles cleanly) and gates on: root cause fixed
+  (`get_hip_version()` returns, no IndexError), AITER server healthy, **CK FMHA
+  prefill kernel** (`ck_tile::FmhaFwdKernel`) present in the torch profile
+  (`/start_profile`→8k request→`/stop_profile`), AITER **≥1.5× TTFT** and **≥2×
+  total throughput** vs `VLLM_ROCM_USE_AITER=0` (8k in/1k out, `--num-warmups 4`).
+- **Hack risk**: fake numbers → verifier self-measures; workaround that doesn't
+  fix the root cause → `root_cause_fixed` probes `get_hip_version()` directly.
+- **✅ Oracle validated via harbor (2026-07-16, reward 1.0)**: TTFT 145 vs 310 ms
+  (2.14×), throughput 15733 vs 5059 tok/s (3.11×).
+- **Difficulty**: hard
 
 ---
 
@@ -649,6 +779,29 @@ benchmark. Each is tagged with the category it counts toward.
   LLVM module rather than trusting emitted text.
 - **✅ Oracle validated via harbor (2026-07-14, reward 1.0)** in job
   `jobs/oracle-all-2026-07-14__10-56-38`.
+- **Difficulty**: medium
+
+---
+
+## H. Algorithm Implementation
+
+### H1. CuTe layout composition (pure-Python) ⚪ ✅ BUILT+VALIDATED
+- Package: `infra-bench/tasks/cute-layout-composition/` · **GPUs**: 0 (CPU-only,
+  `python:3.12-slim`) · contributed by collaborator (toqiu).
+- **Task**: implement `composition(layoutA, layoutB)` in `/app/pycute/layout.py`
+  for a minimal CuTe layout-algebra package (shape:stride layouts), following
+  Cecka, "CuTe Layout Representation and Algebra". Must handle None/int/tuple/
+  hierarchical/stride-zero/negative-stride and general rank-1 `layoutB` so that
+  `R(i) == A(B(i))` over R's domain.
+- **Verifiable**: grader has an INDEPENDENT reference (`_ref_composition`, never
+  calls agent code) and checks 64 cases (10 task + 38 CUTLASS pycute unit tests +
+  16 CUTLASS C++ core tests), each triple-verified: shape/stride equality,
+  `R(i)==A(B(i))` semantics, and value-sequence match.
+- **Hack risk**: hardcode outputs / stub → source-integrity filter rejects
+  `NotImplementedError`, `/tests`, `reward.txt`, `subprocess`, `os.system`,
+  `exec(`; grader computes ground truth itself.
+- **✅ Oracle validated via harbor (2026-07-15, reward 1.0, 70/70 checks)** in job
+  `jobs/2026-07-15__09-29-51`.
 - **Difficulty**: medium
 
 ---
