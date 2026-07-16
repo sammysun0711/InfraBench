@@ -1,0 +1,25 @@
+# Overrides harbor's base `main` service with AMD GPU passthrough, the 2-GPU pool
+# allocator, IPC/shm settings needed for multimodal CUDA IPC transport across
+# 2 TP ranks, and the read-only model mount.
+services:
+  main:
+    devices:
+      - "/dev/kfd"
+      - "/dev/dri"
+    group_add:
+      - "video"
+    security_opt:
+      - "seccomp=unconfined"
+    cap_add:
+      - "SYS_PTRACE"
+    ipc: host
+    shm_size: "16gb"
+    environment:
+      INFRABENCH_GPU_POOL: /gpu_pool
+      INFRABENCH_GPU_COUNT: "${INFRABENCH_GPU_COUNT:-8}"
+      # This task needs two GPUs (Qwen3.5-27B tensor-parallel, tp-size 2).
+      INFRABENCH_GPU_CLAIM: "2"
+    volumes:
+      - "${INFRABENCH_GPU_POOL_HOST:-/tmp/infrabench_gpu_pool}:/gpu_pool"
+      - "${INFRABENCH_MODELS_HOST:-/data/models}:/models:ro"
+    command: ["/infrabench/claim_gpu.sh"]

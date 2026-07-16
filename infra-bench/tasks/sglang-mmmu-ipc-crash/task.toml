@@ -1,0 +1,41 @@
+schema_version = "1.3"
+artifacts = []
+
+[task]
+name = "infra-bench/sglang-mmmu-ipc-crash"
+description = "Debug and fix a crash in a Qwen3.5-27B multimodal sglang server (tensor-parallel across 2x MI350) that dies during an MMMU accuracy test with 'HIP error: invalid device pointer' from the CUDA IPC multimodal transport. Enable the IPC pool handle cache (SGLANG_USE_IPC_POOL_HANDLE_CACHE=1, sglang PR #21418) without disabling the IPC transport, so the server survives the benchmark."
+keywords = ["rocm", "amd", "mi350", "gfx950", "sglang", "multimodal", "cuda-ipc", "hip-ipc", "invalid-device-pointer", "mmmu", "debug", "triage", "crash", "tensor-parallel"]
+[[task.authors]]
+name = "xisun"
+
+[metadata]
+author_name = "xisun"
+difficulty = "hard"
+category = "debug-triage"
+tags = ["rocm", "amd", "gfx950", "sglang", "multimodal", "debug", "crash"]
+
+[verifier]
+# Verifier launches the 27B TP=2 server itself (~90-120s boot) + runs the full
+# MMMU benchmark at concurrency 128 (~8 min).
+timeout_sec = 2400.0
+
+[agent]
+timeout_sec = 5400.0
+
+[environment]
+# Image build: FROM the local sglang base image + copy scripts/crash log.
+build_timeout_sec = 1800.0
+cpus = 16
+memory_mb = 131072
+# GPU access comes from environment/docker-compose.yaml (device passthrough +
+# 2-GPU pool allocator), NOT harbor's allocator (which only knows nvidia-docker).
+# This task needs TWO GPUs (Qwen3.5-27B tensor-parallel, tp-size 2).
+gpus = 0
+allow_internet = true
+mcp_servers = []
+
+[verifier.env]
+
+[environment.env]
+
+[solution.env]

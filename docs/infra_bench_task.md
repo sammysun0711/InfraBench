@@ -5,7 +5,7 @@ must pass the Terminal-Bench bar: **specified / verifiable / solvable /
 not-hackable** (agent can't win by reading the solution, editing tests, or
 faking output).
 
-## Status — 17 tasks BUILT (all 5 categories + compiler-optimization + algorithm-implementation covered)
+## Status — 20 tasks BUILT (all 5 categories + compiler-optimization + algorithm-implementation covered)
 
 | Task package | Category | Gate | Oracle |
 |---|---|---|---|
@@ -15,6 +15,7 @@ faking output).
 | `hotspot-analysis-torch-profiler` | Profiling | top-kernel name + %±5 vs re-profile | ✅ 1.0 |
 | `mem-bandwidth-bench` | Profiling | grader-computed read-only HBM BW ≥5.0 TB/s + HBM traffic, both from ONE rocprofv3 FETCH_SIZE pass (same-run fabrication-proof) | ✅ 1.0 |
 | `gluon-a8w8-mfma-att` | Profiling | grader recomputes MFMA eff from agent's rocprofv3 ATT trace; real MFMA-in-loop + eff >90% + agent-matches-recompute | ✅ 1.0 |
+| `sglang-sync-stall` | Profiling | torch-profile sglang; grader self-profiles + confirms GPU bubble & D2H sync ops; agent names the mamba D2H sync root cause | ✅ 1.0 |
 | `gemma4-gemm-tuning` | Kernel Tuning | aggregate GEMM latency ≥3% faster (aiter tuner) | ✅ 1.0 |
 | `triton-matmul-tuning` | Kernel Tuning | tune autotune configs (incl. K-heavy 1024×1024×16384) → ≥1.2× vs hidden weak baseline, kernel body unchanged, correct | ✅ 1.0 |
 | `dwconv3d-occupancy` | Kernel Tuning | reduce register-bound depthwise-conv3d VGPR (occupancy) + ≥10% faster + correct, verifier self-measures vs frozen original | ✅ 1.0 |
@@ -22,10 +23,12 @@ faking output).
 | `flydsl-cdna4-preshuffle-gemm` | Kernel Implementation | CDNA4 MFMA(16,16,32) port correct & ≥15% faster + timed-path ISA proof | ✅ 1.0 |
 | `paged-attention-hd256` | Kernel Implementation | port HIP paged-attention hd128→hd256, correct vs torch + ≤1.5× aiter latency | ✅ 1.0 |
 | `gemm-fp8-ptpc-quant` | Kernel Implementation | convert Gluon split-K FP8 GEMM block-wise→PTPC per-token quant, correct vs torch + efficiency floor | ✅ 1.0 |
+| `qr-rmsnorm-fusion` | Kernel Implementation | 2-GPU fuse quick all-reduce + add-residual + RMSNorm; correct vs torch + ≥2% faster than unfused (rocprofv3) | ✅ 1.0 |
 | `llvm-simple-constant-propagation` | Compiler Optimization | general const-prop pass on grade-time randomized IR | ✅ 1.0 |
 | `cute-layout-composition` | Algorithm Implementation | CuTe `composition` correct vs independent ref on 64 cases (task + CUTLASS py/cpp), triple-checked | ✅ 1.0 |
 | `pointnet2-hipify` | Debug Triage | CUDA→ROCm build + numerics + compiled _ext & all-9-op custom-kernel trace | ✅ 1.0 |
 | `vllm-aiter-debug` | Debug Triage | fix TheRock aiter hipconfig crash; CK FMHA prefill in torch profile + AITER ≥1.5× TTFT & ≥2× throughput vs AITER=0 | ✅ 1.0 |
+| `sglang-mmmu-ipc-crash` | Debug Triage | 2-GPU Qwen3.5-27B multimodal CUDA-IPC crash; enable SGLANG_USE_IPC_POOL_HANDLE_CACHE (keep IPC transport on) → grader reads live scheduler env + self-runs MMMU (acc >0.28) + agent names root cause | ✅ 1.0 |
 
 All 17 tasks pass their oracle (`run.sh -a oracle`, reward 1.0) in this
 environment. The original 10 GPU/ROCm oracles were validated 2026-07-14
@@ -319,16 +322,30 @@ Given a workload, use ROCm profilers to find and report the truth.
 - **Hack risk**: coin-flip the label → require the numeric evidence to match.
 - **Difficulty**: medium
 
-### B3. Find the host-device sync stall
-- **Image**: pytorch · **GPUs**: 1
-- **Task**: a script is slow due to needless `.item()`/`.cpu()` syncs in the
-  loop; locate them and report line numbers + a fixed version that removes the
-  stalls.
-- **Verifiable**: verifier runs the fixed script, asserts same numerical output
-  AND wall-time improvement > threshold (the stalls are gone).
-- **Hack risk**: trivially rewrite unrelated code → speedup gate + output-parity
-  gate must both pass.
-- **Difficulty**: medium–hard
+### B3. Find the host-device sync stall (sglang) 🔴 ✅ BUILT+VALIDATED
+- Package: `infra-bench/tasks/sglang-sync-stall/` · Image:
+  `lmsysorg/sglang:v0.5.10.post1-rocm720-mi35x` (assertion fix baked in) ·
+  **GPUs**: 1 (pool) + `/models` RO. Model `/models/Qwen3.5-0.8B`.
+- **Task**: profile a real sglang server (`--mamba-scheduler-strategy
+  extra_buffer`) with the torch profiler (`run_sglang_profile.sh`, 4k in/5 out),
+  find the **host-device (D2H) sync stall** bubbling the GPU compute stream, and
+  write `/app/analysis.json` (gpu_idle_pct, top_sync_ops, root_cause). Ground
+  truth (sglang PR #20522): per-step `.cpu()`/`.item()` D2H copies in the mamba
+  state-tracking path (`hybrid_linear_attn_backend.py` `_track_mamba_state_*`)
+  serialize kernel enqueue → GPU ~40-77% idle; sync ops 304 `aten::item` + 304
+  `_local_scalar_dense` + 28 `Memcpy DtoH` (rock-stable).
+- **Verifiable**: verifier launches + torch-profiles the server ITSELF, recomputes
+  GPU-idle% and D2H sync-op counts from its own trace (ground truth), and gates
+  on: analysis present, profile captured, D2H sync ops present (≥100), real GPU
+  bubble (idle >30%), and the agent naming a D2H sync op + the mamba root cause.
+- **Hack risk**: wrong root cause / fabricated report → `agent_identified_stall`
+  fails (must name a D2H sync op AND the mamba path; adversarially verified). The
+  noisy gpu_idle_pct is NOT cross-checked tightly — the stable sync-op counts are
+  the teeth. Launch prerequisite (`is_cuda()`→`is_hip()` for mamba extra_buffer on
+  ROCm) is pre-baked in the image, not the agent's job.
+- **✅ Oracle validated via harbor (2026-07-16, reward 1.0)** in job
+  `jobs/2026-07-16__06-05-47`.
+- **Difficulty**: hard
 
 ### B4. Attribute a multi-GPU comm bottleneck
 - **Image**: pytorch · **GPUs**: 2
@@ -462,6 +479,36 @@ Write a correct GPU kernel (HIP or Triton) matching a reference.
 - **Hack risk**: verifier self-measures against a frozen reference; correctness
   gate blocks a fast-but-wrong quant.
 - **✅ Oracle validated via harbor (2026-07-16, reward 1.0)**.
+- **Difficulty**: hard
+
+### C7. Fuse quick all-reduce + RMSNorm (2-GPU comm+memory fusion) 🔴 ✅ BUILT+VALIDATED
+- Package: `infra-bench/tasks/qr-rmsnorm-fusion/` · Image:
+  `rocm/pytorch:rocm7.2.4...2.10.0` + aiter (PR #4104, pinned sha `f6be100a`, fused
+  epilogue stubbed) · **GPUs**: 2 (pool). Based on ROCm/aiter PR #4104.
+- **Task**: implement the fused all-reduce + RMSNorm epilogue in aiter's
+  `AllReduceTwoshotRMSNorm::run` (`csrc/include/quick_all_reduce.cuh`) — fuse a
+  **communication op** (two-shot IPC quick all-reduce) with a **memory-bound op**
+  (add-residual + RMSNorm) so the all-reduced tensor is normalized before leaving
+  registers/LDS (no extra HBM round-trip). The all-reduce path + rmsnorm building
+  blocks are intact; only the fused epilogue is stubbed.
+- **Verifiable**: verifier rebuilds the agent's kernel (`AITER_REBUILD=1`) and
+  gates on: **accuracy** — the PR's 2-GPU test (fused output + residual_out vs a
+  torch all-reduce+residual+RMSNorm reference, fp16+bf16); **performance** — at
+  65536×4096 bf16, fused ≥ 2% faster than the unfused `qr_all_reduce` +
+  `rmsnorm2d_fwd_with_add` baseline, timed under **`rocprofv3 --kernel-trace`**
+  (precise on-GPU kernel duration — the comm-bound fusion win is small ~1.05×, so
+  CUDA-event noise is avoided by using kernel-trace).
+- **Hack risk**: fast-but-wrong stub → accuracy gate (adversarially verified: the
+  zero-fill stub fails); Python-compose "fusion" that just calls the two unfused
+  ops → ties the baseline, fails the ≥2% gate. Verifier self-measures both under
+  rocprofv3.
+- **Notes**: quick all-reduce needs `world_size∈{2,4,8}` and `hidden×sizeof(T)`
+  must divide the kernel tile (power-of-2 hidden like 4096/8192; **5120 / Qwen3.5-
+  27B is unsupported** by this kernel). Extends the GPU-pool allocator to claim 2
+  cards (`INFRABENCH_GPU_CLAIM=2`).
+- **✅ Oracle validated via harbor (2026-07-16, reward 1.0)** in job
+  `jobs/2026-07-16__07-11-04`: accuracy passed; fused 10107µs vs unfused 10600µs
+  = **1.049×**.
 - **Difficulty**: hard
 
 ---
@@ -619,6 +666,42 @@ Root-cause a failing / broken AI-infra scenario and fix it.
   fix the root cause → `root_cause_fixed` probes `get_hip_version()` directly.
 - **✅ Oracle validated via harbor (2026-07-16, reward 1.0)**: TTFT 145 vs 310 ms
   (2.14×), throughput 15733 vs 5059 tok/s (3.11×).
+- **Difficulty**: hard
+
+### E6. Fix a Qwen3.5-27B multimodal CUDA-IPC crash during MMMU 🔴 ✅ BUILT+VALIDATED
+- Package: `infra-bench/tasks/sglang-mmmu-ipc-crash/` · Image:
+  `lmsysorg/sglang:v0.5.15-rocm720-mi35x` · **GPUs**: 2 (pool, TP=2) + `/models`
+  RO. Model `/models/Qwen3.5-27B`.
+- **Task**: a Qwen3.5-27B multimodal sglang server (TP=2, AITER,
+  `SGLANG_USE_CUDA_IPC_TRANSPORT=1`, triton attn, radix cache off) crashes during
+  the MMMU accuracy test (conc 128) with `HIP error: invalid device pointer` in
+  `cuda_ipc_transport_utils.py:reconstruct_on_target_device` → scheduler dies →
+  SIGQUIT. Root cause: under concurrent multimodal load the sender's
+  `MmItemMemoryPool` chunk backing a CUDA/HIP IPC handle is freed/recycled before
+  the receiver reconstructs it (`_new_shared_cuda` opens a stale device pointer).
+  Fix (sglang PR #21418): `export SGLANG_USE_IPC_POOL_HANDLE_CACHE=1` — caches
+  opened IPC handles so pointers stay valid. Agent fixes the launch script + writes
+  `/app/analysis.json` (root_cause, fix, evidence). The captured crash log is
+  provided as evidence.
+- **Verifiable**: the grader launches the AGENT's launch script, then (1) reads the
+  **live scheduler `/proc/<pid>/environ`** (not the file) requiring BOTH
+  `SGLANG_USE_CUDA_IPC_TRANSPORT` AND `SGLANG_USE_IPC_POOL_HANDLE_CACHE` truthy;
+  (2) `/health`=200; (3) **runs MMMU itself** (conc 128) and requires overall
+  accuracy > 0.28 (ground truth it measures); (4) the agent's root_cause names the
+  IPC/handle/invalid-device-pointer failure + the recycle/free mechanism, fix names
+  the flag.
+- **Hack risk**: "just disable the IPC transport" avoids the crash but discards the
+  optimization → `launch_config_valid` fails (CUDA_IPC_TRANSPORT must stay on).
+  Fabricated accuracy → grader self-runs MMMU. Flag-flip without understanding →
+  root-cause regex.
+- **Built DETERMINISTIC (config-diagnosis), NOT a "must-crash" gate**: the crash is
+  a non-deterministic timing race — did NOT reproduce across conc 128/64/16, fresh
+  & warm, on v0.5.15 AND v0.5.10.post1 (6+ runs). Upgrade to a crash gate when a
+  reliable reproducer is found. **Env gotcha**: launch from `/app`, NOT
+  `/sgl-workspace` (that dir shadows the installed `aiter` package → dtypes error).
+- **✅ Oracle validated via harbor (2026-07-16, reward 1.0)** in job
+  `jobs/2026-07-16__10-03-00`: grader-measured MMMU accuracy 0.324, all 5 checks
+  pass.
 - **Difficulty**: hard
 
 ---
