@@ -1,0 +1,66 @@
+You are diagnosing a **GPU compute-stream bubble** in an sglang LLM server on an
+AMD MI35X (CDNA4, gfx950) GPU. The kernels are fast, but the GPU sits idle a large
+fraction of the time — a classic **host-device synchronization stall**.
+
+## Setup
+
+An sglang server for Qwen3.5-0.8B is launched by
+`/app/launch_qwen3.5_0.8b_sglang_prefix_cache.sh` (AITER on, triton attention,
+`--mamba-scheduler-strategy extra_buffer`, page size 64). Start it, then profile a
+short workload with `/app/run_sglang_profile.sh`, which runs
+`sglang.bench_serving` (4096-token input, 5-token output, single stream) with
+`--profile` and writes a **torch profiler trace** (`*.trace.json.gz`) to
+`$SGLANG_TORCH_PROFILER_DIR` (default `/app/sgl-profile-results`).
+
+```bash
+cd /app
+bash launch_qwen3.5_0.8b_sglang_prefix_cache.sh &   # wait for /health on :9080
+bash run_sglang_profile.sh                          # writes the trace
+```
+
+## Goal
+
+Profile the server, open the trace, and find the **host-device sync stall** that
+bubbles the GPU compute stream. Then write your analysis to **`/app/analysis.json`**, format as follow:
+
+```json
+{
+  "gpu_idle_pct": "xx%",
+  "top_sync_ops": [ops1, ops2, ...],
+  "root_cause": "<what causes the bubble in gpu compute stream>",
+  "trace_path": "/app/sgl-profile-results/.../*.trace.json.gz"
+}
+```
+
+- `gpu_idle_pct` — the fraction of the profiled span the GPU compute stream is
+  idle (kernel gaps ÷ total span), from the trace you captured.
+- `top_sync_ops` — the profiler op names doing the host-device synchronization.
+- `root_cause` — what triggers the sync stall and where in the
+  serving path they happen (name the code path).
+
+## How you are graded
+
+The grader does **not** trust your numbers. It launches the server and runs the
+same profile **itself**, recomputes the GPU-idle% and the D2H sync-op counts from
+its own trace (ground truth), and requires:
+
+1. `/app/analysis.json` exists and parses;
+2. the grader's own trace shows a real GPU bubble (GPU idle > 50%) with the D2H
+   sync ops present;
+3. your `gpu_idle_pct` matches the grader's (within tolerance);
+4. your `top_sync_ops` name torch ops from call stack
+5. your `root_cause` correctly attributes the stall to the D2H syncs in the mamba
+   state-tracking path.
+
+## Hints
+
+- Analyze `traceEvents` in the `.json.gz`: kernel events (`cat == "kernel"`) give
+  the GPU timeline (compute gaps = bubbles); 
+- Check what is different behaviour between prefix cache enable and disabled via `--diable-radix-cache`.
+
+## Notes
+
+- The GPU assigned to this container is pre-selected; use the default device.
+- The model is at `/models/Qwen3.5-0.8B`; the server listens on port 9080.
+- Do not read `/tests`, hardcode grader values, or write
+  `/logs/verifier/reward.txt`.
