@@ -1,0 +1,26 @@
+# Overrides harbor's base `main` service with AMD GPU passthrough + the pool
+# allocator entrypoint. Layered on top of harbor's build compose, so it only
+# needs the runtime keys (image/build come from the base).
+services:
+  main:
+    # Expose all GPUs; HIP_VISIBLE_DEVICES (set by the pool) restricts each
+    # trial to its claimed card. `video` group works by name on both base
+    # images; no --privileged needed.
+    devices:
+      - "/dev/kfd"
+      - "/dev/dri"
+    group_add:
+      - "video"
+    security_opt:
+      - "seccomp=unconfined"
+    cap_add:
+      - "SYS_PTRACE"
+    ipc: host
+    environment:
+      INFRABENCH_GPU_POOL: /gpu_pool
+      INFRABENCH_GPU_COUNT: "${INFRABENCH_GPU_COUNT:-8}"
+    volumes:
+      # Shared host pool dir for cross-trial GPU arbitration (flock lives here).
+      - "${INFRABENCH_GPU_POOL_HOST:-/tmp/infrabench_gpu_pool}:/gpu_pool"
+    # Claim a GPU (holding the lock for the container lifetime), then stay alive.
+    command: ["/infrabench/claim_gpu.sh"]
