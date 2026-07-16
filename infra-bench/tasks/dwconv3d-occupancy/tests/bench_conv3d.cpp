@@ -180,8 +180,8 @@ static void print_kernel_config(dim3 grid, dim3 block) {
            grid.z, total_blocks, total_threads);
 }
 
-static void print_performance(double avg_ms, int niter, int B, int C_out, int D_out, int H_out, int W_out, size_t n_in,
-                              size_t n_out, size_t n_w, size_t n_bias) {
+static double print_performance(double avg_ms, int niter, int B, int C_out, int D_out, int H_out, int W_out,
+                                size_t n_in, size_t n_out, size_t n_w, size_t n_bias) {
     const double sec = static_cast<double>(avg_ms) / 1000.0;
     const double gflops =
         (2.0 * static_cast<double>(B) * C_out * D_out * H_out * W_out * 1.0 * KD * KH * KW) / 1e9;
@@ -196,6 +196,7 @@ static void print_performance(double avg_ms, int niter, int B, int C_out, int D_
     printf("  Workload:             %.4f GFLOP / iter\n", gflops);
     printf("  Throughput:           %.4f TFLOPS\n", tflops);
     printf("  Efficive Bandwidth:   %.1f GB/s \n", gbps);
+    return tflops;
 }
 
 static bool check_output_bf16_vs_ref(const std::vector<__hip_bfloat16>& gpu_out,
@@ -236,6 +237,7 @@ int main(int argc, char** argv) {
     int niter = 10;
     int warmup = 10;
     bool do_check = true;
+    const char* result_json = nullptr;   // host-side machine-readable result path
     int pos = 1;
     if (pos < argc && argv[pos][0] != '-') {
         niter = std::atoi(argv[pos++]);
@@ -246,6 +248,8 @@ int main(int argc, char** argv) {
     for (; pos < argc; ++pos) {
         if (std::strcmp(argv[pos], "--no-check") == 0) {
             do_check = false;
+        } else if (std::strcmp(argv[pos], "--result-json") == 0 && pos + 1 < argc) {
+            result_json = argv[++pos];
         }
     }
     if (niter < 1) {
@@ -321,27 +325,36 @@ int main(int argc, char** argv) {
     HIP_CHECK(hipMemcpy(h_out.data(), d_out, n_out * sizeof(__hip_bfloat16), hipMemcpyDeviceToHost));
 
     const float avg_ms = ms / static_cast<float>(niter);
-    print_performance(avg_ms, niter, B, C_out, D_out, H_out, W_out, n_in, n_out, n_w, n_bias);
+    const double measured_tflops =
+        print_performance(avg_ms, niter, B, C_out, D_out, H_out, W_out, n_in, n_out, n_w, n_bias);
 
     uint16_t u0;
     std::memcpy(&u0, &h_out[0], sizeof(u0));
 
+    bool correct = false;
     if (do_check) {
         std::vector<float> ref_f32;
         cpu_depthwise_conv3d_ref(h_in, h_w, h_bias, ref_f32, B, C, D, H, W, C_out, D_out, H_out, W_out);
         const float atol = 0.02f;
         const float rtol = 0.02f;
-        if (!check_output_bf16_vs_ref(h_out, ref_f32, atol, rtol, B, C_out, D_out, H_out, W_out)) {
-            HIP_CHECK(hipEventDestroy(ev0));
-            HIP_CHECK(hipEventDestroy(ev1));
-            HIP_CHECK(hipFree(d_in));
-            HIP_CHECK(hipFree(d_out));
-            HIP_CHECK(hipFree(d_w));
-            HIP_CHECK(hipFree(d_bias));
-            return 1;
-        }
+        correct = check_output_bf16_vs_ref(h_out, ref_f32, atol, rtol, B, C_out, D_out, H_out, W_out);
     } else {
         printf("correctness skipped (--no-check)\n");
+    }
+
+    // Host-side machine-readable result. This is written by trusted host code
+    // (not device printf), so a kernel cannot forge PASS/throughput into it. The
+    // grader parses ONLY this file, not the combined stdout log.
+    if (result_json != nullptr) {
+        FILE* rf = std::fopen(result_json, "w");
+        if (rf != nullptr) {
+            std::fprintf(rf,
+                         "{\"correct\": %s, \"checked\": %s, \"tflops\": %.6f, "
+                         "\"avg_ms\": %.6f, \"niter\": %d}\n",
+                         correct ? "true" : "false", do_check ? "true" : "false",
+                         measured_tflops, avg_ms, niter);
+            std::fclose(rf);
+        }
     }
 
     HIP_CHECK(hipEventDestroy(ev0));
@@ -350,5 +363,5 @@ int main(int argc, char** argv) {
     HIP_CHECK(hipFree(d_out));
     HIP_CHECK(hipFree(d_w));
     HIP_CHECK(hipFree(d_bias));
-    return 0;
+    return (do_check && !correct) ? 1 : 0;
 }

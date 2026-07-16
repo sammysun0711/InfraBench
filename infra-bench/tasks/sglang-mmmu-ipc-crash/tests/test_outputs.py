@@ -30,6 +30,7 @@ def test_expected_checks_present():
         "analysis_present",
         "launch_config_valid",
         "server_healthy",
+        "mmmu_benchmark_intact",
         "mmmu_accuracy",
         "agent_identified_rootcause",
     }

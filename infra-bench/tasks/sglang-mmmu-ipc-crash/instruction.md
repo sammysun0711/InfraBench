@@ -61,9 +61,11 @@ The grader does **not** trust your description. It launches **your**
    shows the CUDA IPC multimodal transport **still enabled** AND the IPC pool
    handle cache **enabled** (read from the live process, not from the file).
 3. **server_healthy** — the server reaches `/health` = 200.
-4. **mmmu_accuracy** — the grader runs the MMMU benchmark itself (concurrency
+4. **mmmu_benchmark_intact** — the MMMU benchmark source matches a build-time
+   snapshot (editing `bench_sglang.py` to fake accuracy fails here).
+5. **mmmu_accuracy** — the grader runs the MMMU benchmark itself (concurrency
    128) and requires a real overall accuracy (> 0.28).
-5. **agent_identified_rootcause** — your `root_cause` names the correct root cause 
+6. **agent_identified_rootcause** — your `root_cause` names the correct root cause
    and your `fix` names the setting you changed.
 
 ## Hints

@@ -13,6 +13,18 @@ launches the servers itself and measures everything, gating on:
                               kernel (ck_tile::FmhaFwdKernel / aiter::mha_varlen_fwd),
   (4) ttft_2x               — AITER=1 median TTFT <= 0.5 * AITER=0 (8k/1k, warm),
   (5) throughput_2x         — AITER=1 total tok/s >= 2.0 * AITER=0 (8k/1k, warm).
+
+Threat-model note (shared-mode): the grader launches `vllm serve` and measures
+with `vllm ... bench serve` from the same post-agent Python environment, and
+reads CK-FMHA evidence from the server-generated torch profiler trace. These
+components are not integrity-checked (the full vLLM serving stack is too large to
+hash meaningfully). The gates are robust against a NON-adversarial agent — the
+perf gate is comparative (AITER=1 vs AITER=0, so a uniformly slow/fast client
+cancels out) and the CK-FMHA check binds to a real matrix-core kernel name in the
+trace. A root-capable adversarial agent could still patch the vLLM client, server
+routes, or profiler output to fabricate TTFT/throughput/kernel evidence; that is
+an accepted limitation of shared-container serving tasks under the current threat
+model, not a defended boundary.
 """
 import glob
 import gzip

@@ -48,6 +48,26 @@ from `/data/models`; `run.sh`/`analyze.sh` inject the AMD gateway header;
 harbor's allocator). `run.sh` with no `-p` runs all tasks, one harbor job per
 package, up to `INFRA_PARALLEL` (default 4) concurrent.
 
+**Codex round-5 trust-boundary hardening (2026-07-16, all re-validated 1.0):**
+`dwconv3d-occupancy` now compiles its own frozen `/tests` harness against only
+the agent's kernel (agent bench no longer trusted); `sglang-sync-stall` runs
+frozen `/tests` launch+profile scripts; `paged-attention-hd256` +
+`sglang-mmmu-ipc-crash` snapshot a build-time sha256 manifest of the aiter
+baseline / MMMU benchmark source and re-verify before trusting the perf/accuracy
+gate; `cute-layout-composition` adds 40 seed-randomized property cases (defeats
+hardcoding the visible set); `vllm-aiter-debug` documents the shared-mode
+limitation.
+
+**Codex round-6 follow-up (2026-07-16, re-validated 1.0):** `dwconv3d-occupancy`
+frozen harness now writes a host-side JSON result file (correctness + host-timed
+TFLOPS) that the grader reads instead of stdout + checks the process return code,
+killing device-`printf` stdout injection; `sglang-sync-stall` drops the
+agent-supplied-trace check and grades only against the verifier's own trace;
+integrity helpers no longer honor `AITER_ROOT`/`MMMU_DIR` env overrides. Deferred:
+`paged-attention-hd256` runtime JIT-`.so` binding, `qr-rmsnorm-fusion` perf
+redesign, and `gluon-a8w8-mfma-att` verifier-owned ATT collection (see
+`docs/codex_review_infrabench.md`).
+
 Everything below is the candidate brainstorm; built tasks are marked
 **✅ BUILT+VALIDATED** inline.
 

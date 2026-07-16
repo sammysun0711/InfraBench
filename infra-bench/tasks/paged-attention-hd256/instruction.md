@@ -59,6 +59,8 @@ The grader is pyhip-free and deterministic:
    for head dimension 256.
 4. **Performance**: your `pa + pa_reduce` path is benchmarked against aiter's
    `torch.ops.aiter.paged_attention_ragged` on the same tensors and must clear
-   the configured performance floor.
+   the configured performance floor. The aiter baseline is integrity-checked
+   against a build-time snapshot, so slowing or modifying it will fail grading —
+   the speedup must come from your kernel.
 
 Use the default visible GPU; it is already selected for the container.

@@ -55,15 +55,20 @@ ISA (`hipcc ... -S` and grep `.vgpr_count`).
 
 ## How you are graded
 
-The grader does **not** trust any printed number. It builds + benchmarks both a
-**frozen trusted copy of the original kernel** and **your edited kernel**, and
-requires:
-1. your kernel **builds** for gfx950 via the harness,
-2. the benchmark's CPU float32 **correctness check passes** (atol=rtol=0.02),
+The grader does **not** trust any printed number, and it does **not** use your
+copy of `bench_conv3d.cpp`. It compiles its **own frozen harness** against a
+staged build dir whose only variable is the kernel source — your
+`kernels/conv_depthwise3d_hip.cpp` for your path, the frozen original for the
+baseline. Editing the harness has no effect on grading; only the kernel counts.
+Correctness and throughput are read from a **host-written result file** and the
+process exit code — not from stdout — so device-side `printf` cannot forge them.
+It requires:
+1. your kernel **builds** for gfx950 via the frozen harness,
+2. the frozen benchmark's CPU float32 **correctness check passes** (atol=rtol=0.02),
 3. your kernel's **VGPR count is meaningfully lower** than the original's
    (the occupancy proof — read from the compiled ISA), and
 4. your kernel is **≥10% faster** (TFLOPS) than the original, measured by the
-   grader itself back to back.
+   grader itself back to back with the frozen harness.
 
 ## Notes
 

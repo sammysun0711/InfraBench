@@ -40,17 +40,22 @@ bubbles the GPU compute stream. Then write your analysis to **`/app/analysis.jso
 
 ## How you are graded
 
-The grader does **not** trust your numbers. It launches the server and runs the
-same profile **itself**, recomputes the GPU-idle% and the D2H sync-op counts from
-its own trace (ground truth), and requires:
+The grader does **not** trust your numbers, and it runs its **own frozen copies**
+of the launch + profile scripts (not your `/app` copies), so editing those has no
+effect on grading. It launches the server and profiles **itself**, recomputes the
+GPU-idle% and the D2H sync-op counts from its own trace (ground truth), and
+requires:
 
 1. `/app/analysis.json` exists and parses;
-2. the grader's own trace shows a real GPU bubble (GPU idle > 50%) with the D2H
-   sync ops present;
-3. your `gpu_idle_pct` matches the grader's (within tolerance);
-4. your `top_sync_ops` name torch ops from call stack
-5. your `root_cause` correctly attributes the stall to the D2H syncs in the mamba
+2. the grader's own trace shows a real GPU bubble with the D2H sync ops present;
+3. your `gpu_idle_pct` is a plausible bubble and your `top_sync_ops` name a D2H
+   sync op;
+4. your `root_cause` correctly attributes the stall to the D2H syncs in the mamba
    state-tracking path.
+
+Your analysis is graded against the **grader's own trace**, not a trace file you
+supply, so still include `trace_path` for reference but focus on getting the
+root-cause attribution right.
 
 ## Hints
 

@@ -15,6 +15,22 @@ from torch.utils.cpp_extension import load
 AGENT = Path("/app/pa.cpp")
 OUT = Path("/tmp/pa_grade.json")
 WRAPPER = Path("/tmp/pa_ext_wrapper.cu")
+# Baseline-integrity manifest snapshotted at image-build time (before agent access).
+AITER_MANIFEST = "/opt/infrabench/aiter_src.sha256"
+
+
+def _aiter_baseline_intact():
+    """Re-verify the aiter source tree matches the build-time manifest. Returns
+    (ok, detail). Used to reject a perf pass obtained by slowing the baseline."""
+    try:
+        sys.path.insert(0, os.path.dirname(AITER_MANIFEST))
+        sys.path.insert(0, str(Path(__file__).parent))
+        import aiter_integrity
+        digest, n = aiter_integrity.compute()
+        expected = open(AITER_MANIFEST).read().strip()
+        return digest == expected, f"files={n} now={digest[:16]} expected={expected[:16]}"
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
 
 B = 1
 HQ = 32
@@ -327,6 +343,12 @@ def main():
             _add(checks, f"correct_kv{kv_len}", False, f"{type(exc).__name__}: {exc}\n{traceback.format_exc(limit=3)}")
         finally:
             torch.cuda.empty_cache()
+
+    # Baseline integrity: the perf gate is only meaningful if the aiter baseline
+    # was not tampered with (e.g. slowed) after the image was built.
+    baseline_ok, baseline_why = _aiter_baseline_intact()
+    _add(checks, "baseline_integrity", baseline_ok,
+         baseline_why if baseline_ok else f"aiter baseline source changed since build: {baseline_why}")
 
     try:
         case = _make_case(PERF_KV_LEN, 2000)

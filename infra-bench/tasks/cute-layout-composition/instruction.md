@@ -40,7 +40,10 @@ Support these cases:
 Preserve the existing API, assertions, and string representations. Do not
 hardcode verifier cases, read `/tests`, or write `/logs/verifier/reward.txt`.
 The verifier includes cases mirrored from CUTLASS's CuTe composition unit tests,
-limited to the pure Python `Layout` API provided here.
+limited to the pure Python `Layout` API provided here, **plus a set of
+seed-randomized property cases** (random valid layouts checked against a
+reference implementation). Hardcoding the visible cases will not pass — you must
+implement `composition` correctly.
 
 ## Useful commands
 
