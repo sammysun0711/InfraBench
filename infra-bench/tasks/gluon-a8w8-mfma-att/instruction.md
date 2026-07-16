@@ -1,0 +1,88 @@
+You are analyzing the **matrix-core (MFMA) utilization** of a high-performance
+**Gluon** FP8 (a8w8) GEMM kernel on an AMD MI35X (CDNA4, gfx950) GPU, using
+`rocprofv3` **Advanced Thread Trace (ATT)** — the same cycle-level methodology
+AMD kernel engineers use to drive GEMM optimization.
+
+## Background
+
+The a8w8 Gluon kernel lives at `/app/repo/kernels/gemm/intra_wave/a8w8/`
+(the `gfx950-gluon-tutorials` repo, pinned). **MFMA efficiency** is the fraction
+of main-loop cycles spent executing MFMA (matrix-core) instructions:
+
+```
+MFMA efficiency = total_MFMA_cycles_in_loop / average_iteration_duration
+```
+
+It is cycle-based and therefore frequency-independent, so it is more stable and
+reproducible than raw TFLOPS. The repo documents the method in
+`/app/repo/docs/mfma_efficiency.md` and implements it in
+`/app/repo/scripts/process_json.py` (invoked via `/app/repo/scripts/run_att.py`).
+
+The environment is already prepared: Triton is built from the tutorial tag, the
+`rocprof-trace-decoder` library is installed at `/opt/rocm/lib`, and the pinned
+repo is at `/app/repo`.
+
+## Goal
+
+Profile the a8w8 kernel with ATT, decode the thread trace, and compute its
+**MFMA efficiency** for the `K = 8192` problem under the kernel's intended
+optimization config (`llir+force-agpr+amdgcnas`).
+
+## Deliverable
+
+Write your analysis to **`/app/mfma_analysis.json`** with (at least) these keys:
+
+```json
+{
+  "mfma_efficiency_pct": 99.53,
+  "mfma_count_in_loop": 128,
+  "total_mfma_cycles_in_loop": 4096,
+  "num_iterations": 31.0,
+  "average_iteration_duration": 4115.48,
+  "att_ui_dir": "/app/repo/kernels/gemm/intra_wave/a8w8/tmp/ui_output_..."
+}
+```
+
+`att_ui_dir` must point at the ATT decoder output directory you generated (the
+one containing `code.json` and `se*_sm0_sl0_wv*.json` wave files).
+
+## How to run it
+
+The optimization config sets these environment variables before launching:
+
+```bash
+export LLVM_PASS_PLUGIN_PATH=/app/repo/plugins/llir_scheduler/libLlirSched.so
+export LLVM_PASS_PLUGIN_KEEP_TARGET_MACHINE=1
+export TRITON_FORCE_MFMA_AGPR=1
+export TRITON_AMDGCNAS_PLUGIN=1
+export ROCPROF_ATT_LIBRARY_PATH=/opt/rocm/lib/
+
+cd /app/repo/kernels/gemm/intra_wave/a8w8
+# att_matmul.json must set kernel_include_regex="a8w8_kernel" (see
+# scripts/run_perf_table.py for the template used by the tutorial).
+python /app/repo/scripts/run_att.py --att-output tmp python bench.py --K 8192
+```
+
+`run_att.py` runs `rocprofv3 --att`, finds the `ui_*` output directory, and calls
+`process_json.py` to print the MFMA efficiency JSON. Take the numbers from there.
+
+## How you are graded
+
+The grader does **not** trust your printed number. It:
+1. checks `/app/mfma_analysis.json` exists and names a real ATT `ui_*` dir with
+   `code.json` + wave-trace files,
+2. runs its OWN trusted copy of the trace decoder on that directory and confirms
+   the decoded loop actually contains MFMA (`v_mfma_f32*`) instructions
+   (`mfma_count_in_loop > 0`) — proving a real matrix-core kernel was traced,
+3. requires the grader-recomputed MFMA efficiency to land in a realistic band
+   (this well-optimized kernel sustains near-peak matrix-core utilization), and
+4. requires your reported `mfma_efficiency_pct` to agree with its independent
+   recomputation (so a fabricated number is rejected).
+
+## Notes
+
+- The GPU assigned to this container is pre-selected; use the default device.
+- Do not read `/tests`, hardcode grader values, or write
+  `/logs/verifier/reward.txt`.
+- ATT runs profile a limited kernel-iteration window; small run-to-run variation
+  in the efficiency value is expected and the band accounts for it.
