@@ -24,6 +24,7 @@ def test_expected_checks_present():
     names = {c["check"] for c in d["checks"]}
     assert "triton_version_fixed" in names, "Triton version check missing"
     assert "hip_autotune_config" in names, "static HIP autotune config check missing"
+    assert "kernel_body_unchanged" in names, "kernel-body-unchanged check missing"
     assert any(n.startswith("correct_") for n in names), "correctness checks missing"
     assert "performance_gain_after_tuning" in names, "positive tuning gain check missing"
     assert "faster_than_untuned" in names, "untuned speedup check missing"
