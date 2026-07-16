@@ -1,0 +1,23 @@
+# Overrides harbor's base `main` service with AMD GPU passthrough, the 2-GPU pool
+# allocator, and NCCL/IPC-friendly settings. No model mount — synthetic tensors.
+services:
+  main:
+    devices:
+      - "/dev/kfd"
+      - "/dev/dri"
+    group_add:
+      - "video"
+    security_opt:
+      - "seccomp=unconfined"
+    cap_add:
+      - "SYS_PTRACE"
+    ipc: host
+    shm_size: "16gb"
+    environment:
+      INFRABENCH_GPU_POOL: /gpu_pool
+      INFRABENCH_GPU_COUNT: "${INFRABENCH_GPU_COUNT:-8}"
+      # This task needs two GPUs (quick all-reduce across 2 ranks).
+      INFRABENCH_GPU_CLAIM: "2"
+    volumes:
+      - "${INFRABENCH_GPU_POOL_HOST:-/tmp/infrabench_gpu_pool}:/gpu_pool"
+    command: ["/infrabench/claim_gpu.sh"]

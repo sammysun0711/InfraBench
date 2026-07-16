@@ -1,0 +1,58 @@
+struct AllReduceTwoshotRMSNorm
+{
+    static_assert(sizeof(T) == 2);
+    static_assert(sizeof(CommT) == 2);
+
+    static constexpr int kWorldSize = Codec::kWorldSize;
+    static constexpr int kElemsPerAtom = sizeof(int32x4_t) / sizeof(T);
+
+    // ======================================================================
+    // TODO(agent): implement the fused two-shot all-reduce + RMSNorm epilogue.
+    //
+    // This kernel must, in ONE pass and without an extra HBM round-trip of the
+    // all-reduced intermediate:
+    //   1. perform the two-shot quick all-reduce of `input` across ranks into a
+    //      register/shared-memory accumulator (see AllReduceTwoshot::run for the
+    //      all-reduce-only version of this exact communication pattern), then
+    //   2. add the per-rank `residual_inp` to the reduced value, writing the sum
+    //      to `residual_out` (the pre-normalization residual stream), then
+    //   3. compute RMSNorm over the `hidden_dim` axis on that sum:
+    //         denom = rsqrt( mean(x^2 over hidden_dim) + eps )
+    //         output = x * denom * weight
+    //      writing the normalized result to `output`.
+    //
+    // `N` = total elements, `hidden_dim` = normalization width, one row per token.
+    // `weight` has `hidden_dim` elements. `T`/`CommT` are fp16 or bf16.
+    //
+    // The current stub only zero-fills the outputs, so it compiles and runs but
+    // does NOT match the reference — the accuracy test will fail until the fused
+    // epilogue is implemented here.
+    // ======================================================================
+    __device__ static void run(T const* __restrict__ input,
+                               T const* __restrict__ residual_inp,
+                               T* __restrict__ residual_out,
+                               T* __restrict__ output,
+                               T const* __restrict__ weight,
+                               float eps,
+                               uint32_t const N,
+                               uint32_t const hidden_dim,
+                               int const block,
+                               int const rank,
+                               uint8_t** __restrict__ buffer_list,
+                               uint32_t const data_offset,
+                               uint32_t flag_color,
+                               int64_t data_size_per_phase)
+    {
+        // Stub: zero the outputs for this block's tile so the kernel is a no-op
+        // placeholder. Replace with the real fused all-reduce + RMSNorm.
+        int thread = threadIdx.x + threadIdx.y * kWavefront;
+        int grid   = gridDim.x;
+        for(uint32_t idx = (uint32_t)(block) * blockDim.x * blockDim.y + thread;
+            idx < N;
+            idx += (uint32_t)grid * blockDim.x * blockDim.y)
+        {
+            output[idx]       = qr_from_float<T>(0.0f);
+            residual_out[idx] = qr_from_float<T>(0.0f);
+        }
+    }
+};
