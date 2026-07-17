@@ -64,32 +64,46 @@ OPENCODE_CONFIG="$(python3 - "$PROVIDER_ID" "$GATEWAY_BASE_URL" "$MODEL" "$AMD_G
 import json, sys
 provider, base_url, model, subkey, ntid, npm = sys.argv[1:7]
 
-# opencode computes Cost USD from a per-model `cost` block ({input, output} in
-# USD per MILLION tokens). Custom providers have no models.dev pricing, so without
-# this the hub "Cost USD" column is blank. Approximate PUBLIC LIST prices (USD/1M
-# tokens); may not match the gateway's actual billing. Match by case-insensitive
-# substring; unknown models fall back to a mid-range default.
+# opencode computes Cost USD from a per-model `cost` block (USD per MILLION
+# tokens). Fields: input (= cache-MISS input rate), output, cache_read (= cache-
+# HIT input rate; equals input when the vendor doesn't distinguish). Custom
+# providers have no models.dev pricing, so without this the hub "Cost USD" column
+# is blank. Matched by case-insensitive substring, longest key first.
 PRICING = {
-    "gpt-5.5":       {"input": 1.25, "output": 10.0},
-    "gpt-5.6":       {"input": 1.25, "output": 10.0},
-    "gpt-5":         {"input": 1.25, "output": 10.0},
-    "gpt-4.1":       {"input": 2.0,  "output": 8.0},
-    "gpt-4o":        {"input": 2.5,  "output": 10.0},
-    "gemini-3.1-pro":{"input": 1.25, "output": 10.0},
-    "gemini-3":      {"input": 1.25, "output": 10.0},
-    "gemini-2.5-pro":{"input": 1.25, "output": 10.0},
-    "gemini-2.5-flash":{"input": 0.30, "output": 2.5},
-    "deepseek-v4":   {"input": 0.28, "output": 0.42},
-    "deepseek":      {"input": 0.28, "output": 0.42},
-    "kimi":          {"input": 0.60, "output": 2.5},
-    "glm":           {"input": 0.60, "output": 2.2},
+    # DeepSeek + GLM: vendor-published prices from price.md (separate cache-hit
+    # via cache_read vs cache-miss via input). DeepSeek also matches litellm.
+    "deepseek-v4-flash": {"input": 0.14,  "output": 0.28, "cache_read": 0.0028},
+    "deepseek-v4-pro":   {"input": 0.435, "output": 0.87, "cache_read": 0.003625},
+    "deepseek":          {"input": 0.14,  "output": 0.28, "cache_read": 0.0028},
+    "glm-5.2":           {"input": 1.4,   "output": 4.4,  "cache_read": 0.26},
+    "glm":               {"input": 1.4,   "output": 4.4,  "cache_read": 0.26},
+    # GPT + Gemini: authoritative rates from LiteLLM's model_cost table (the same
+    # source harbor's codex agent uses), pulled 2026-07-17 (USD per 1M tokens).
+    "gpt-5.5":       {"input": 5.0,  "output": 30.0, "cache_read": 0.5},
+    "gpt-5.6":       {"input": 5.0,  "output": 30.0, "cache_read": 0.5},
+    "gpt-5":         {"input": 1.25, "output": 10.0, "cache_read": 0.125},
+    "gpt-4.1":       {"input": 2.0,  "output": 8.0,  "cache_read": 0.5},
+    "gpt-4o":        {"input": 2.5,  "output": 10.0, "cache_read": 1.25},
+    "gemini-3.1-pro":{"input": 2.0,  "output": 12.0, "cache_read": 0.2},
+    "gemini-2.5-pro":{"input": 1.25, "output": 10.0, "cache_read": 0.125},
+    "gemini-2.5-flash":{"input": 0.30, "output": 2.5, "cache_read": 0.03},
+    # Kimi: vendor-published prices from price.md (input = cache-MISS, cache_read
+    # = cache-HIT). Longest key first so k2.7-code-highspeed beats k2.7-code.
+    "kimi-k2.7-code-highspeed": {"input": 1.90, "output": 8.0,  "cache_read": 0.38},
+    "kimi-k2.7-code":           {"input": 0.95, "output": 4.0,  "cache_read": 0.19},
+    "kimi-k2.6":                {"input": 0.95, "output": 4.0,  "cache_read": 0.16},
+    "kimi-k2.5":                {"input": 0.60, "output": 3.0,  "cache_read": 0.10},
+    "kimi-k3":                  {"input": 3.0,  "output": 15.0, "cache_read": 0.30},
+    "kimi":                     {"input": 0.95, "output": 4.0,  "cache_read": 0.19},
+    # NOTE: gemini-3.5-pro-preview intentionally omitted — no public price yet.
 }
 def price(m):
     ml = m.lower()
-    for k, v in PRICING.items():
+    # Longest key first so 'deepseek-v4-flash' wins over 'deepseek'.
+    for k in sorted(PRICING, key=len, reverse=True):
         if k in ml:
-            return v
-    return {"input": 1.0, "output": 5.0}  # fallback
+            return PRICING[k]
+    return None  # unknown model → no cost block (leave hub Cost USD blank)
 
 # npm picks the endpoint: @ai-sdk/openai → /v1/responses (reasoning models like
 # gpt-5.5); @ai-sdk/openai-compatible → /v1/chat/completions (plain chat models
@@ -110,7 +124,7 @@ cfg = {
                     "ntid": ntid,
                 },
             },
-            "models": {model: {"cost": price(model)}},
+            "models": {model: ({"cost": price(model)} if price(model) else {})},
         }
     }
 }
