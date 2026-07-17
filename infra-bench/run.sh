@@ -42,19 +42,30 @@ source "$ENV_FILE"
 : "${NTID:?NTID not set (check $ENV_FILE)}"
 : "${ANTHROPIC_BASE_URL:?ANTHROPIC_BASE_URL not set (check $ENV_FILE)}"
 
-CUSTOM_HEADERS="Ocp-Apim-Subscription-Key: ${AMD_LLM_GATEWAY_KEY}, user: ${NTID}"
+# SECURITY: do NOT pass the gateway key as a literal --ae value. harbor persists
+# agent env into config.json/lock.json/result.json and only auto-redacts vars
+# whose NAME matches (KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL|AUTH). The header var
+# is named ANTHROPIC_CUSTOM_HEADERS (no such word), so a literal value leaks the
+# key into every job artifact. Instead we export the header as a host env var and
+# pass the *template* '${ANTHROPIC_CUSTOM_HEADERS}': harbor stores the template
+# literally (no secret on disk) and resolves it from the host env at agent start
+# (harbor/agents/factory.py resolve_env_vars). Same for the base URL.
+export ANTHROPIC_CUSTOM_HEADERS="Ocp-Apim-Subscription-Key: ${AMD_LLM_GATEWAY_KEY}, user: ${NTID}"
 
 # Re-export after sourcing (setup_env.sh must not clobber these).
-export INFRABENCH_GPU_POOL_HOST INFRABENCH_GPU_COUNT INFRABENCH_MODELS_HOST
+export INFRABENCH_GPU_POOL_HOST INFRABENCH_GPU_COUNT INFRABENCH_MODELS_HOST ANTHROPIC_BASE_URL
 
 # --- agent args -------------------------------------------------------------
 # oracle agent ignores model/gateway args; only pass them for real agents.
 AGENT_ARGS=(-a "$AGENT")
 if [[ "$AGENT" != "oracle" ]]; then
+  # Pass TEMPLATES, not values — harbor resolves them from the host env at run
+  # time and never writes the resolved secret to any job artifact. Single quotes
+  # are intentional: the literal string ${VAR} must reach harbor unexpanded.
   AGENT_ARGS+=(
     -m "$MODEL"
-    --ae "ANTHROPIC_CUSTOM_HEADERS=${CUSTOM_HEADERS}"
-    --ae "ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL}"
+    --ae 'ANTHROPIC_CUSTOM_HEADERS=${ANTHROPIC_CUSTOM_HEADERS}'
+    --ae 'ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL}'
   )
 fi
 
@@ -100,6 +111,11 @@ for t in "$SCRIPT_DIR"/tasks/*/; do
   # ${JOBS_DIR}/${name}/.
   ( harbor run "${AGENT_ARGS[@]}" -p "$t" -o "$JOBS_DIR" --job-name "$name" "$@" \
       > "${JOBS_DIR}/${name}.runlog" 2>&1 ) &
+  # Stagger launches so concurrent trials don't all hit the agent-setup phase
+  # (claude-code npm install) at the same instant. A simultaneous batch of
+  # installs saturates network/disk and blows the 360s agent-setup timeout
+  # (AgentSetupTimeoutError). A short gap lets each install get a head start.
+  sleep "${INFRA_LAUNCH_STAGGER:-20}"
 done
 # Wait for every remaining job; ignore nonzero so we always reach the summary.
 wait || true

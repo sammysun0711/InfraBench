@@ -43,13 +43,18 @@ source "$ENV_FILE"
 : "${NTID:?NTID not set (check $ENV_FILE)}"
 : "${ANTHROPIC_BASE_URL:?ANTHROPIC_BASE_URL not set (check $ENV_FILE)}"
 
-# The header harbor does not forward on its own.
-CUSTOM_HEADERS="Ocp-Apim-Subscription-Key: ${AMD_LLM_GATEWAY_KEY}, user: ${NTID}"
+# The header harbor does not forward on its own. SECURITY: export it as a host
+# env var and pass the TEMPLATE (not the value) so harbor stores '${...}' in the
+# analysis job config and resolves the real secret from the host env at run time
+# — the key never lands in any persisted artifact. See run.sh for the full
+# rationale (harbor only name-redacts KEY/SECRET/TOKEN/... vars).
+export ANTHROPIC_CUSTOM_HEADERS="Ocp-Apim-Subscription-Key: ${AMD_LLM_GATEWAY_KEY}, user: ${NTID}"
+export ANTHROPIC_BASE_URL
 
 # --- run --------------------------------------------------------------------
 exec harbor analyze "$TARGET" \
   -a claude-code \
   -m "$MODEL" \
-  --ae "ANTHROPIC_CUSTOM_HEADERS=${CUSTOM_HEADERS}" \
-  --ae "ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL}" \
+  --ae 'ANTHROPIC_CUSTOM_HEADERS=${ANTHROPIC_CUSTOM_HEADERS}' \
+  --ae 'ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL}' \
   "$@"
