@@ -1,4 +1,5 @@
 # InfraBench
+Github repository: [InfraBench](https://github.com/sammysun0711/InfraBench)
 
 20 real-world **AI-infrastructure engineering tasks** on **AMD MI35X (CDNA4 / gfx950)** GPUs, across five categories: model deployment, profiling analysis, kernel implementation, kernel tuning, and debug triage. Each task runs an agent in a Docker sandbox and is scored by a deterministic per-task verifier.
 
@@ -10,7 +11,6 @@ Built on [Harbor framework](https://github.com/harbor-framework/harbor) via the 
 - `harbor` CLI and an LLM-gateway-authenticated agent
 - Model weights at `/data/models` (mounted read-only into model-dependent tasks)
 
-## Run
 ```bash
 export INFRABENCH_GPU_COUNT=8
 harbor run -d infra-bench/infra-bench-v1 -a claude-code -m <model> -n 6
