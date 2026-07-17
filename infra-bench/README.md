@@ -16,8 +16,10 @@ export INFRABENCH_GPU_COUNT=8
 harbor run -d infra-bench/infra-bench-v1 -a claude-code -m <model> -n 6
 ```
 
-**Concurrency:** two tasks need 2 GPUs (`qr-rmsnorm-fusion`, `sglang-mmmu-ipc-crash`); the GPU-pool allocator is non-blocking, so keep `INFRA_PARALLEL ≤ INFRABENCH_GPU_COUNT - 2`. All concurrent trials must run on a single host (pool arbitration is filesystem `flock`).
+**Concurrency:** two tasks need 2 GPUs (`qr-rmsnorm-fusion`, `sglang-mmmu-ipc-crash`); the GPU-pool allocator is non-blocking, so keep `INFRA_PARALLEL ≤ INFRABENCH_GPU_COUNT - 2`.
+All concurrent trials must run on a single host (pool arbitration is filesystem `flock`).
 
 ## Results & scoring
 
-Output lands in `jobs/<timestamp>/`. `verifier/reward.txt` is the score (`1` = pass, `0` = fail); `run.sh` prints a `passed/total` summary. Use `harbor view jobs` to browse trajectories and `./analyze.sh jobs/<job>` to analyze failures.
+Output lands in `jobs/<timestamp>/`. `verifier/reward.txt` is the score (`1` = pass, `0` = fail); 
+Use `harbor view jobs` to browse trajectories and `harbor analyze jobs` to analyze failures.
