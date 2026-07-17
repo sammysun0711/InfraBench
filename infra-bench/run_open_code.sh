@@ -63,6 +63,34 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OPENCODE_CONFIG="$(python3 - "$PROVIDER_ID" "$GATEWAY_BASE_URL" "$MODEL" "$AMD_GATEWAY_SUBKEY" "$NTID" "$OPENCODE_NPM" <<'PY'
 import json, sys
 provider, base_url, model, subkey, ntid, npm = sys.argv[1:7]
+
+# opencode computes Cost USD from a per-model `cost` block ({input, output} in
+# USD per MILLION tokens). Custom providers have no models.dev pricing, so without
+# this the hub "Cost USD" column is blank. Approximate PUBLIC LIST prices (USD/1M
+# tokens); may not match the gateway's actual billing. Match by case-insensitive
+# substring; unknown models fall back to a mid-range default.
+PRICING = {
+    "gpt-5.5":       {"input": 1.25, "output": 10.0},
+    "gpt-5.6":       {"input": 1.25, "output": 10.0},
+    "gpt-5":         {"input": 1.25, "output": 10.0},
+    "gpt-4.1":       {"input": 2.0,  "output": 8.0},
+    "gpt-4o":        {"input": 2.5,  "output": 10.0},
+    "gemini-3.1-pro":{"input": 1.25, "output": 10.0},
+    "gemini-3":      {"input": 1.25, "output": 10.0},
+    "gemini-2.5-pro":{"input": 1.25, "output": 10.0},
+    "gemini-2.5-flash":{"input": 0.30, "output": 2.5},
+    "deepseek-v4":   {"input": 0.28, "output": 0.42},
+    "deepseek":      {"input": 0.28, "output": 0.42},
+    "kimi":          {"input": 0.60, "output": 2.5},
+    "glm":           {"input": 0.60, "output": 2.2},
+}
+def price(m):
+    ml = m.lower()
+    for k, v in PRICING.items():
+        if k in ml:
+            return v
+    return {"input": 1.0, "output": 5.0}  # fallback
+
 # npm picks the endpoint: @ai-sdk/openai → /v1/responses (reasoning models like
 # gpt-5.5); @ai-sdk/openai-compatible → /v1/chat/completions (plain chat models
 # like Kimi-K2.7-Code). Override with AMD_OPENCODE_NPM.
@@ -82,7 +110,7 @@ cfg = {
                     "ntid": ntid,
                 },
             },
-            "models": {model: {}},
+            "models": {model: {"cost": price(model)}},
         }
     }
 }
@@ -133,7 +161,7 @@ trap 'rm -rf "$(dirname "$_stage")"' EXIT
 # task.source="infra-bench" (hub "Datasets" column); the provider/model split
 # fills "Providers"/"Models". One job, harbor's native -n concurrency (default
 # 4). Pass -i <task>/-x <task> to filter.
-JOB_NAME="${JOB_NAME:-opencode-$(date +%Y-%m-%d__%H-%M-%S)}"
+JOB_NAME="${JOB_NAME:-$(date +%Y-%m-%d__%H-%M-%S)}"
 JOBS_ROOT="${SCRIPT_DIR}/jobs"
 JOBS_DIR="${JOBS_ROOT}/${JOB_NAME}"       # harbor creates this from --job-name
 CONCURRENCY="${INFRA_PARALLEL:-4}"

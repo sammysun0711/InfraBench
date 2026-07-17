@@ -26,6 +26,14 @@ set -euo pipefail
 ENV_FILE="${ENV_FILE:-/home/xisun/setup_env.sh}"
 AGENT="${AGENT:-claude-code}"
 MODEL="${MODEL:-claude-opus-4.8}"
+# Prefix the model with the provider so harbor records model_info.provider =
+# "anthropic" (fills the hub "Providers" column). claude-code strips the prefix
+# when setting ANTHROPIC_MODEL (claude_code.py: split("/",1)[-1]), so the model
+# still resolves on the Anthropic gateway. Skipped for the oracle agent.
+CLAUDE_PROVIDER="${CLAUDE_PROVIDER:-anthropic}"
+if [[ "$AGENT" != "oracle" ]]; then
+  case "$MODEL" in */*) : ;; *) MODEL="${CLAUDE_PROVIDER}/${MODEL}" ;; esac
+fi
 # GPU pool: shared host dir for cross-trial flock arbitration, and total GPUs.
 export INFRABENCH_GPU_POOL_HOST="${INFRABENCH_GPU_POOL_HOST:-/tmp/infrabench_gpu_pool}"
 export INFRABENCH_GPU_COUNT="${INFRABENCH_GPU_COUNT:-8}"

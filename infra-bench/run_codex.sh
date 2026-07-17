@@ -26,6 +26,13 @@ set -euo pipefail
 ENV_FILE="${ENV_FILE:-/home/xisun/setup_env.sh}"
 MODEL="${MODEL:-gpt-5.5}"
 GATEWAY_BASE_URL="${AMD_CODEX_BASE_URL:-https://llm-api.amd.com/Unified/v1}"
+# Prefix the model with the provider so harbor records model_info.provider (fills
+# the hub "Providers" column). Codex models are OpenAI (gpt-*), so provider=openai.
+# codex's run() strips the provider with split("/")[-1] → still calls
+# `codex --model gpt-5.5`; the AMD gateway routing comes from the
+# [model_providers.amd] block AmdCodex writes to config.toml regardless.
+PROVIDER_ID="${CODEX_PROVIDER:-openai}"
+case "$MODEL" in */*) : ;; *) MODEL="${PROVIDER_ID}/${MODEL}" ;; esac
 
 # GPU pool + models (same as run_claude_code.sh).
 export INFRABENCH_GPU_POOL_HOST="${INFRABENCH_GPU_POOL_HOST:-/tmp/infrabench_gpu_pool}"
@@ -78,7 +85,7 @@ trap 'rm -rf "$(dirname "$_stage")"' EXIT
 # Run the tasks as a LOCAL DATASET. harbor stamps each trial with
 # task.source="infra-bench" (hub "Datasets" column); the model fills "Models".
 # One job, harbor's native -n concurrency (default 4). Use -i/-x to filter.
-JOB_NAME="${JOB_NAME:-codex-$(date +%Y-%m-%d__%H-%M-%S)}"
+JOB_NAME="${JOB_NAME:-$(date +%Y-%m-%d__%H-%M-%S)}"
 JOBS_ROOT="${SCRIPT_DIR}/jobs"
 JOBS_DIR="${JOBS_ROOT}/${JOB_NAME}"       # harbor creates this from --job-name
 CONCURRENCY="${INFRA_PARALLEL:-4}"
