@@ -24,7 +24,14 @@ if [ "$ok" != 1 ]; then
 fi
 
 # 2) Profile the fixed workload + parse ground truth (venv python has sglang).
-/opt/venv/bin/python /tests/profile_workload.py profile --prof-dir /tmp/verifier_prof --port 30000
+# profile_workload.py wipes /tmp/verifier_prof first + drops a start marker, so a
+# pre-seeded fake trace can't be picked up. If profiling fails, do NOT proceed to
+# parse (which would otherwise risk a stale/foreign trace) — fail the task.
+if ! /opt/venv/bin/python /tests/profile_workload.py profile --prof-dir /tmp/verifier_prof --port 30000; then
+  echo "[verifier] profiling failed — no valid ground-truth trace"
+  pkill -9 -f sglang 2>/dev/null; pkill -9 -f launch_server 2>/dev/null
+  echo 0 > /logs/verifier/reward.txt; exit 0
+fi
 /opt/venv/bin/python /tests/profile_workload.py parse --prof-dir /tmp/verifier_prof --out /tmp/ground_truth.json
 cp /tmp/ground_truth.json /logs/verifier/ 2>/dev/null || true
 cp /app/hotspot.json /logs/verifier/agent_hotspot.json 2>/dev/null || true

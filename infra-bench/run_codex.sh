@@ -114,3 +114,15 @@ for r in "${JOBS_DIR}"/*/verifier/reward.txt; do
   [[ "$val" == "1" ]] && passed=$((passed + 1))
 done
 echo "[run_codex.sh] ${passed}/${total} passed"
+
+# Exit nonzero if any task failed or no rewards were produced, so CI/automation
+# does not treat a failed (or empty) sweep as success (harbor's exit code is
+# suppressed above so we can print the summary).
+if (( total == 0 )); then
+  echo "[run_codex.sh] ERROR: no reward files found — sweep produced no results" >&2
+  exit 1
+fi
+if (( passed != total )); then
+  echo "[run_codex.sh] FAILED: $((total - passed)) task(s) did not pass" >&2
+  exit 1
+fi

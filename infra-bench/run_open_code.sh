@@ -95,6 +95,12 @@ PRICING = {
     "kimi-k2.5":                {"input": 0.60, "output": 3.0,  "cache_read": 0.10},
     "kimi-k3":                  {"input": 3.0,  "output": 15.0, "cache_read": 0.30},
     "kimi":                     {"input": 0.95, "output": 4.0,  "cache_read": 0.19},
+    # MiniMax: official vendor prices (input = cache-MISS, cache_read = cache-HIT).
+    # Longest key first so m2.7-highspeed beats m2.7.
+    "minimax-m2.7-highspeed":   {"input": 0.6,  "output": 2.4,  "cache_read": 0.06},
+    "minimax-m2.7":             {"input": 0.3,  "output": 1.2,  "cache_read": 0.06},
+    "minimax-m3":               {"input": 0.6,  "output": 2.4,  "cache_read": 0.12},
+    "minimax":                  {"input": 0.3,  "output": 1.2,  "cache_read": 0.06},
     # NOTE: gemini-3.5-pro-preview intentionally omitted — no public price yet.
 }
 def price(m):
@@ -169,7 +175,6 @@ for _t in "$SCRIPT_DIR"/tasks/*/; do
   [[ -f "${_t}task.toml" ]] && ln -s "$(cd "$_t" && pwd)" "$_stage/$(basename "$_t")"
 done
 DATASET_DIR="$_stage"
-trap 'rm -rf "$(dirname "$_stage")"' EXIT
 
 # Run the tasks as a LOCAL DATASET. harbor stamps each trial with
 # task.source="infra-bench" (hub "Datasets" column); the provider/model split
@@ -180,6 +185,12 @@ JOBS_ROOT="${SCRIPT_DIR}/jobs"
 JOBS_DIR="${JOBS_ROOT}/${JOB_NAME}"       # harbor creates this from --job-name
 CONCURRENCY="${INFRA_PARALLEL:-4}"
 mkdir -p "$JOBS_DIR"
+
+# Cleanup on ANY exit (normal, error, or interrupt/kill): scrub the gateway key
+# from job artifacts FIRST (opencode_config embeds it via --ak), then remove the
+# staging dir. Set here — once JOBS_DIR exists — so an interrupt mid-run still
+# sanitizes artifacts, not only the happy path.
+trap '_scrub "$JOBS_DIR"; rm -rf "$(dirname "$_stage")"' EXIT
 echo "[run_open_code.sh] running tasks/ as a local dataset → ${JOBS_DIR} (n=${CONCURRENCY}, model=${QUALIFIED_MODEL})"
 
 # -o = jobs ROOT; --job-name is the single subdir harbor creates under it
@@ -193,9 +204,8 @@ harbor run "${AGENT_ARGS[@]}" \
   -o "$JOBS_ROOT" --job-name "$JOB_NAME" "$@" \
   2>&1 | tee "${JOBS_DIR}/run.log" || true
 
-# opencode_config carries the subkey and lands in job artifacts — scrub it.
-_scrub "$JOBS_DIR"
-
+# (subkey scrub + staging cleanup happen in the EXIT trap set above, so they run
+# even if this script is interrupted before reaching here.)
 echo "[run_open_code.sh] done → ${JOBS_DIR}"
 echo "[run_open_code.sh] rewards:"
 total=0; passed=0
@@ -207,3 +217,15 @@ for r in "${JOBS_DIR}"/*/verifier/reward.txt; do
   [[ "$val" == "1" ]] && passed=$((passed + 1))
 done
 echo "[run_open_code.sh] ${passed}/${total} passed"
+
+# Exit nonzero if any task failed or no rewards were produced, so CI/automation
+# does not treat a failed (or empty) sweep as success (harbor's exit code is
+# suppressed above so we can print the summary + scrub the key).
+if (( total == 0 )); then
+  echo "[run_open_code.sh] ERROR: no reward files found — sweep produced no results" >&2
+  exit 1
+fi
+if (( passed != total )); then
+  echo "[run_open_code.sh] FAILED: $((total - passed)) task(s) did not pass" >&2
+  exit 1
+fi

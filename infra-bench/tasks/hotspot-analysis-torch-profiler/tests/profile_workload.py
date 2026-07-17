@@ -14,8 +14,12 @@ Usage:
 The workload token pattern is FIXED so the baseline (verifier) and the agent
 profile exactly the same computation.
 """
-import argparse, collections, glob, gzip, json, os, subprocess, sys
+import argparse, collections, glob, gzip, json, os, shutil, subprocess, sys, time
 import urllib.request
+
+# Marker file the profiler drops just before it starts; parse_trace() only trusts
+# traces created at/after this time, defeating agent-pre-seeded fake traces.
+_START_MARKER = ".verifier_profile_start"
 
 # Fixed workload: 4 requests, 8192 input / 5 output, concurrency 1. Multiple
 # requests average out single-shot profiling noise so the per-kernel % is
@@ -26,7 +30,15 @@ OUTPUT_LEN = 5
 NUM_PROMPT = 4
 
 def cmd_profile(args):
+    # SECURITY: wipe any pre-existing contents so an agent cannot pre-seed a fake
+    # (future-mtime) *.trace.json.gz that parse_trace() would later pick up. Then
+    # drop a start marker; parse_trace() only trusts traces newer than it.
+    shutil.rmtree(args.prof_dir, ignore_errors=True)
     os.makedirs(args.prof_dir, exist_ok=True)
+    marker = os.path.join(args.prof_dir, _START_MARKER)
+    with open(marker, "w") as f:
+        f.write(str(time.time()))
+    start = os.path.getmtime(marker)
     # bench_serving --profile toggles /start_profile + /stop_profile around the
     # run and writes the trace under SGLANG_TORCH_PROFILER_DIR.
     env = dict(os.environ, SGLANG_TORCH_PROFILER_DIR=args.prof_dir, HF_HUB_OFFLINE="0")
@@ -45,17 +57,31 @@ def cmd_profile(args):
     # `python -m sglang.bench_serving` fail to import sglang.benchmark.serving.
     r = subprocess.run(cmd, env=env, cwd="/tmp", capture_output=True, text=True, timeout=1200)
     print("[profile] bench_serving rc=", r.returncode)
-    # trace lands in a timestamped subdir under prof_dir
-    traces = glob.glob(os.path.join(args.prof_dir, "**", "*.trace.json.gz"), recursive=True)
-    print(f"[profile] traces: {traces}")
+    # A failed workload must not silently pass on a stale/leftover trace.
+    if r.returncode != 0:
+        print("[profile] bench_serving FAILED; stderr tail:\n" + (r.stderr or "")[-500:])
+        sys.exit(1)
+    # Only count traces created by THIS run (mtime >= start marker).
+    traces = [t for t in glob.glob(os.path.join(args.prof_dir, "**", "*.trace.json.gz"), recursive=True)
+              if os.path.getmtime(t) >= start]
+    print(f"[profile] new traces: {traces}")
     sys.exit(0 if traces else 1)
 
 def parse_trace(prof_dir):
+    # Only trust traces created at/after the start marker this profiler run wrote.
+    # A missing marker means profiling never ran here — refuse rather than parse a
+    # possibly-pre-seeded trace.
+    marker = os.path.join(prof_dir, _START_MARKER)
+    assert os.path.exists(marker), (
+        f"no start marker in {prof_dir}; run `profile` before `parse`"
+    )
+    start = os.path.getmtime(marker)
     traces = sorted(
-        glob.glob(os.path.join(prof_dir, "**", "*.trace.json.gz"), recursive=True),
+        (t for t in glob.glob(os.path.join(prof_dir, "**", "*.trace.json.gz"), recursive=True)
+         if os.path.getmtime(t) >= start),
         key=os.path.getmtime,
     )
-    assert traces, f"no trace found in {prof_dir}"
+    assert traces, f"no trace created by this profiler run in {prof_dir}"
     ev = json.load(gzip.open(traces[-1]))
     ev = ev["traceEvents"] if isinstance(ev, dict) else ev
     kt = collections.defaultdict(float)

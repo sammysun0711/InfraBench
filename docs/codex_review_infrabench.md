@@ -338,3 +338,191 @@ them won't fail. (Not committed — left for the maintainer.)
 - **#6 `gluon-a8w8-mfma-att` provenance** — verifier runs `rocprofv3 --att` itself
   into a verifier-owned dir, or binds the trace to profiler metadata / kernel
   regex / command line / timestamp.
+
+## Codex Round 7 Clarification Pass (2026-07-17)
+
+Scope: I reviewed the current worktree after the Round 6 response above, focusing
+on whether the claimed fixes are present and whether newer/unreviewed task and
+runner packages have comparable verifier or packaging gaps. I did not run fresh
+GPU, oracle, profiler, SGLang, vLLM, or model-serving jobs.
+
+### Round 6 Fixes Verified In Current Tree
+
+- `dwconv3d-occupancy` no longer trusts stdout for the critical gates. The grader
+  invokes the frozen harness with `--result-json`, rejects nonzero return codes,
+  and parses only the host-written JSON result file
+  (`infra-bench/tasks/dwconv3d-occupancy/tests/grade_conv.py:94`,
+  `infra-bench/tasks/dwconv3d-occupancy/tests/grade_conv.py:106`,
+  `infra-bench/tasks/dwconv3d-occupancy/tests/grade_conv.py:109`,
+  `infra-bench/tasks/dwconv3d-occupancy/tests/grade_conv.py:116`). The frozen
+  harness writes `correct`, `checked`, and `tflops` from host code and exits
+  nonzero on correctness failure
+  (`infra-bench/tasks/dwconv3d-occupancy/tests/bench_conv3d.cpp:348`,
+  `infra-bench/tasks/dwconv3d-occupancy/tests/bench_conv3d.cpp:366`).
+- `sglang-sync-stall` now grades the agent's analysis only against a
+  verifier-owned trace and explicitly documents why `trace_path` is no longer
+  used as evidence
+  (`infra-bench/tasks/sglang-sync-stall/tests/grade_syncstall.py:73`,
+  `infra-bench/tasks/sglang-sync-stall/tests/grade_syncstall.py:143`,
+  `infra-bench/tasks/sglang-sync-stall/tests/grade_syncstall.py:166`).
+- The `AITER_ROOT` and `MMMU_DIR` environment override nits are fixed: both helper
+  roots are hard-coded in the current files
+  (`infra-bench/tasks/paged-attention-hd256/tests/aiter_integrity.py:24`,
+  `infra-bench/tasks/paged-attention-hd256/tests/aiter_integrity.py:27`,
+  `infra-bench/tasks/sglang-mmmu-ipc-crash/tests/mmmu_integrity.py:22`).
+- The six helper/script files called out in the Round 6 packaging note are now
+  tracked by git, so that packaging issue is closed in this worktree.
+
+### New / Still-Current Findings
+
+#### 1. High: `hotspot-analysis-torch-profiler` can parse a stale or pre-seeded verifier trace
+
+The verifier creates `/tmp/verifier_prof` but never removes existing contents
+before profiling (`infra-bench/tasks/hotspot-analysis-torch-profiler/tests/test.sh:7`,
+`infra-bench/tasks/hotspot-analysis-torch-profiler/tests/test.sh:11`). The
+profile helper also only calls `os.makedirs(..., exist_ok=True)` and considers the
+profile step successful if any `*.trace.json.gz` exists under that directory
+(`infra-bench/tasks/hotspot-analysis-torch-profiler/tests/profile_workload.py:29`,
+`infra-bench/tasks/hotspot-analysis-torch-profiler/tests/profile_workload.py:49`,
+`infra-bench/tasks/hotspot-analysis-torch-profiler/tests/profile_workload.py:51`).
+The parser then chooses the newest trace by filesystem mtime
+(`infra-bench/tasks/hotspot-analysis-torch-profiler/tests/profile_workload.py:53`,
+`infra-bench/tasks/hotspot-analysis-torch-profiler/tests/profile_workload.py:55`,
+`infra-bench/tasks/hotspot-analysis-torch-profiler/tests/profile_workload.py:56`).
+
+Impact: in shared mode, an agent can pre-create `/tmp/verifier_prof/.../*.trace.json.gz`
+with a future mtime and write `/app/hotspot.json` to match it. Even if the
+verifier later produces a real trace, `parse_trace()` can still select the
+future-dated fake. This turns the verifier-owned ground truth back into an
+agent-influenceable artifact.
+
+Recommendation: delete and recreate the profiler directory immediately before
+profiling, use a random verifier-owned directory, record the profiling start time,
+and parse only traces created by the current profiler run. Reject future mtimes
+and fail if the profile command returns nonzero or produces no new trace.
+
+#### 2. High: `gemma4-gemm-tuning` compares against mutable AITER runtime code
+
+The task tells the agent to work inside `/sgl-workspace/aiter`
+(`infra-bench/tasks/gemma4-gemm-tuning/instruction.md:18`,
+`infra-bench/tasks/gemma4-gemm-tuning/instruction.md:21`). The verifier protects
+the shape list by using `/tests/gemma4_untuned_gemm.csv`, but the benchmark imports
+and times the live AITER package and tuner helpers from the mutable tree
+(`infra-bench/tasks/gemma4-gemm-tuning/tests/test.sh:11`,
+`infra-bench/tasks/gemma4-gemm-tuning/tests/bench_gemm.py:9`,
+`infra-bench/tasks/gemma4-gemm-tuning/tests/bench_gemm.py:11`,
+`infra-bench/tasks/gemma4-gemm-tuning/tests/bench_gemm.py:14`). Baseline vs tuned
+is selected only by `AITER_CONFIG_GEMM_BF16`
+(`infra-bench/tasks/gemma4-gemm-tuning/tests/test.sh:24`,
+`infra-bench/tasks/gemma4-gemm-tuning/tests/test.sh:27`,
+`infra-bench/tasks/gemma4-gemm-tuning/tests/test.sh:31`).
+
+Impact: a malicious agent can patch `aiter.tuned_gemm.gemm_a16w16` or its import
+surface to slow the "default" path when `AITER_CONFIG_GEMM_BF16=/tmp/no_such_tuned.csv`,
+or otherwise make the baseline and tuned measurements incomparable, while still
+leaving the trusted CSV shape list intact. This is the same class of mutable
+runtime-baseline issue that `paged-attention-hd256` partially addressed with an
+AITER source manifest.
+
+Recommendation: snapshot and verify the AITER source used for grading, or run the
+baseline from a pristine AITER copy/cache that the agent cannot edit. If AITER JIT
+artifacts affect the measured GEMM path, also purge or bind the runtime build
+cache before timing.
+
+#### 3. Medium: `llm-fp8-quantize` lacks the pristine-baseline guard used by the SGLang optimization task
+
+`gemma4-sglang-serving-opt` measures its baseline through `/opt/sglang-pristine`
+and verifies a build-time hash before running it
+(`infra-bench/tasks/gemma4-sglang-serving-opt/environment/Dockerfile:11`,
+`infra-bench/tasks/gemma4-sglang-serving-opt/environment/Dockerfile:19`,
+`infra-bench/tasks/gemma4-sglang-serving-opt/tests/test.sh:18`,
+`infra-bench/tasks/gemma4-sglang-serving-opt/tests/test.sh:22`,
+`infra-bench/tasks/gemma4-sglang-serving-opt/tests/bench_lib.sh:33`). In contrast,
+`llm-fp8-quantize` measures both the BF16 baseline and the agent FP8 model through
+the same mutable post-agent SGLang/eval environment
+(`infra-bench/tasks/llm-fp8-quantize/tests/test.sh:32`,
+`infra-bench/tasks/llm-fp8-quantize/tests/test.sh:36`,
+`infra-bench/tasks/llm-fp8-quantize/tests/bench_lib.sh:37`,
+`infra-bench/tasks/llm-fp8-quantize/tests/bench_lib.sh:58`,
+`infra-bench/tasks/llm-fp8-quantize/tests/bench_lib.sh:61`). The static FP8 check
+only verifies that `/app/fp8_model/config.json` declares an FP8-looking
+quantization config (`infra-bench/tasks/llm-fp8-quantize/tests/test.sh:15`,
+`infra-bench/tasks/llm-fp8-quantize/tests/test.sh:23`).
+
+Impact: for honest agents, this is a reasonable end-to-end model task. Under the
+adversarial shared-container threat model used elsewhere in this review, however,
+an agent can patch the shared SGLang server/client/eval stack to slow the BF16
+baseline, favor `/app/fp8_model`, or distort parsed throughput/accuracy. The
+read-only model mount protects `/models`, but not the code that serves or scores
+the models.
+
+Recommendation: either apply the same pristine SGLang/client/eval snapshot pattern
+used by `gemma4-sglang-serving-opt`, or document this explicitly as an accepted
+shared-mode limitation for this task.
+
+#### 4. Medium: `run_codex.sh` and `run_open_code.sh` report failures but still exit 0
+
+`run_claude_code.sh` pipes `harbor run` through `tee` with `|| true`, then exits
+nonzero if no reward files are produced or if any task failed
+(`infra-bench/run_claude_code.sh:113`,
+`infra-bench/run_claude_code.sh:118`,
+`infra-bench/run_claude_code.sh:132`,
+`infra-bench/run_claude_code.sh:134`,
+`infra-bench/run_claude_code.sh:138`). `run_codex.sh` and `run_open_code.sh` use
+the same `harbor run ... | tee ... || true` pattern, summarize `passed/total`, and
+then end without the final nonzero-exit guard
+(`infra-bench/run_codex.sh:99`,
+`infra-bench/run_codex.sh:104`,
+`infra-bench/run_codex.sh:116`,
+`infra-bench/run_open_code.sh:189`,
+`infra-bench/run_open_code.sh:194`,
+`infra-bench/run_open_code.sh:209`).
+
+Impact: automation can treat a failed or empty Codex/OpenCode sweep as success.
+This is especially risky because the scripts intentionally suppress the raw
+`harbor run` exit code so they can print a reward summary.
+
+Recommendation: copy the `total == 0` and `passed != total` exit logic from
+`run_claude_code.sh` into both wrappers.
+
+#### 5. Medium: `run_open_code.sh` still exposes the gateway key until post-run scrubbing succeeds
+
+The script documents that `opencode_config` embeds the subscription key and may
+land in artifacts (`infra-bench/run_open_code.sh:13`,
+`infra-bench/run_open_code.sh:16`). It builds the JSON with
+`Ocp-Apim-Subscription-Key` from `AMD_GATEWAY_SUBKEY` and passes the whole config
+as a command-line `--ak` value (`infra-bench/run_open_code.sh:63`,
+`infra-bench/run_open_code.sh:123`,
+`infra-bench/run_open_code.sh:138`,
+`infra-bench/run_open_code.sh:141`). The scrub runs only after `harbor run`
+returns (`infra-bench/run_open_code.sh:189`,
+`infra-bench/run_open_code.sh:196`,
+`infra-bench/run_open_code.sh:197`).
+
+Impact: if the script is interrupted, killed, or the machine reboots before line
+197, persisted job artifacts can retain the key. The key is also present in the
+wrapper process arguments while `harbor run` is executing. This is better than
+leaving artifacts permanently unsanitized, but it is not equivalent to the
+template-based secret handling in `run_claude_code.sh`/`run_codex.sh`.
+
+Recommendation: prefer a custom OpenCode agent/provider injection path that reads
+the key from an environment variable at runtime without serializing it into
+`--ak`. As an incremental guard, install an `EXIT` trap after `JOBS_DIR` is known
+so `_scrub "$JOBS_DIR"` runs on interruption as well as normal completion.
+
+### Validation Performed In This Pass
+
+Passed:
+
+- `bash -n` over the top-level run/analyze scripts and task shell entrypoints.
+- `python3.11 -m py_compile` over tracked InfraBench Python files outside job
+  artifacts.
+- `python3.11` + `tomllib` parsed task TOML files and confirmed `[task].name`
+  matches each task directory.
+- `python3.11` + PyYAML parsed GPU-task `environment/docker-compose.yaml` files.
+
+Not run:
+
+- Fresh oracle jobs.
+- Fresh GPU, profiler, SGLang, vLLM, or model-serving jobs.
+- Adversarial canary submissions.
