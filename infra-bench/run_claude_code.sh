@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# Run InfraBench tasks with harbor through the AMD internal LLM gateway.
+# Run InfraBench tasks with the claude-code agent via harbor, through the AMD
+# internal LLM gateway. (For the Codex agent, use run_codex.sh.)
 #
 # Handles two things harbor doesn't do on its own:
 #   1. Gateway auth — injects ANTHROPIC_CUSTOM_HEADERS via --ae (harbor forwards
@@ -9,11 +10,15 @@
 #      docker-compose.yaml can bind-mount it (${INFRABENCH_GPU_POOL_HOST}), and
 #      the pool size so the allocator knows how many GPUs exist.
 #
+# Runs tasks/ as a LOCAL DATASET so the hub Jobs table fills every column
+# (Datasets/Models/…). Use -i/-x to filter to specific tasks.
+#
 # Usage:
-#   ./run.sh                                  # all tasks in tasks/
-#   ./run.sh -p tasks/hello-rocm              # one task package
-#   ./run.sh -a oracle -p tasks/hello-rocm    # oracle (sanity-check a task)
-#   ./run.sh -p tasks/hello-rocm -k 3 -n 4    # 3 attempts, 4 concurrent
+#   ./run_claude_code.sh                                  # ALL 20 tasks (local dataset)
+#   ./run_claude_code.sh -i hello-rocm                    # one task (include filter)
+#   AGENT=oracle ./run_claude_code.sh -i hello-rocm       # oracle (sanity-check a task)
+#   ./run_claude_code.sh -i hello-rocm -k 3               # 3 attempts
+#   INFRA_PARALLEL=6 ./run_claude_code.sh                 # harbor -n concurrency
 #   Any extra args pass straight through to `harbor run`.
 set -euo pipefail
 
@@ -72,72 +77,65 @@ fi
 # --- run --------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# If the caller passed an explicit -p/--path, run a single harbor job verbatim.
-# Scan args token by token (not a substring match on "$*") so an argument VALUE
-# that merely contains "-p" (e.g. a model name) can't flip us out of all-task
-# mode.
-explicit_path=false
-for arg in "$@"; do
-  case "$arg" in
-    -p|--path|--path=*) explicit_path=true; break ;;
-  esac
-done
-if [[ "$explicit_path" == true ]]; then
-  exec harbor run "${AGENT_ARGS[@]}" "$@"
+# harbor labels a local dataset by the -p directory's basename (task.source =
+# path.resolve().name → the hub "Datasets" column). Pointing -p at tasks/ would
+# label it "tasks"; we want "infra-bench". So stage a dir literally named
+# infra-bench containing symlinks to each real task, and point -p there.
+DATASET_DIR="${SCRIPT_DIR}/tasks"
+DATASET_NAME="${INFRA_DATASET_NAME:-infra-bench}"
+if [[ "$(basename "$DATASET_DIR")" != "$DATASET_NAME" ]]; then
+  _stage="$(mktemp -d)/${DATASET_NAME}"
+  mkdir -p "$_stage"
+  for _t in "$SCRIPT_DIR"/tasks/*/; do
+    [[ -f "${_t}task.toml" ]] && ln -s "$(cd "$_t" && pwd)" "$_stage/$(basename "$_t")"
+  done
+  DATASET_DIR="$_stage"
+  trap 'rm -rf "$(dirname "$_stage")"' EXIT
 fi
 
-# No -p given → run EVERY task package under tasks/ as its own harbor job.
-# harbor's `run` keeps only the LAST -p when several are passed, and its dataset
-# model is registry-based (no clean offline path), so we launch one single-task
-# harbor job per package and run up to INFRA_PARALLEL of them concurrently. The
-# GPU-pool allocator (flock per card) makes concurrent trials safe: each job's
-# trial claims its own GPU.
+# Run the tasks as a LOCAL DATASET (-p "$DATASET_DIR"). harbor stamps each trial
+# with task.source="infra-bench", populating the hub "Datasets" column; the model
+# fills "Models". One job, harbor's native -n concurrency (default 4). Use
+# -i <task>/-x <task> to filter; extra args pass to harbor run. The GPU-pool
+# allocator (flock per card) keeps concurrent trials safe.
 JOB_NAME="${JOB_NAME:-$(date +%Y-%m-%d__%H-%M-%S)}"
-JOBS_DIR="${SCRIPT_DIR}/jobs/${JOB_NAME}"
-PARALLEL="${INFRA_PARALLEL:-4}"
+JOBS_ROOT="${SCRIPT_DIR}/jobs"
+JOBS_DIR="${JOBS_ROOT}/${JOB_NAME}"       # harbor creates this from --job-name
+CONCURRENCY="${INFRA_PARALLEL:-4}"
 mkdir -p "$JOBS_DIR"
-echo "[run.sh] running all tasks under tasks/ into ${JOBS_DIR} (parallel=${PARALLEL})"
+echo "[run_claude_code.sh] running tasks/ as a local dataset → ${JOBS_DIR} (n=${CONCURRENCY}, agent=${AGENT}, model=${MODEL})"
 
-for t in "$SCRIPT_DIR"/tasks/*/; do
-  [[ -f "$t/task.toml" ]] || continue
-  name="$(basename "$t")"
-  # throttle: wait if PARALLEL jobs already running. `wait -n` returns the
-  # finished job's exit status; a failed harbor job must NOT abort the launcher
-  # under `set -e`, so swallow it (per-task success is read from reward.txt).
-  while (( $(jobs -rp | wc -l) >= PARALLEL )); do wait -n || true; done
-  echo "[run.sh] launching TASK: ${name}"
-  # Each task gets its OWN --job-name (= task name) so concurrent jobs don't
-  # collide on harbor's auto timestamped job dir. Output lands in
-  # ${JOBS_DIR}/${name}/.
-  ( harbor run "${AGENT_ARGS[@]}" -p "$t" -o "$JOBS_DIR" --job-name "$name" "$@" \
-      > "${JOBS_DIR}/${name}.runlog" 2>&1 ) &
-  # Stagger launches so concurrent trials don't all hit the agent-setup phase
-  # (claude-code npm install) at the same instant. A simultaneous batch of
-  # installs saturates network/disk and blows the 360s agent-setup timeout
-  # (AgentSetupTimeoutError). A short gap lets each install get a head start.
-  sleep "${INFRA_LAUNCH_STAGGER:-20}"
-done
-# Wait for every remaining job; ignore nonzero so we always reach the summary.
-wait || true
-echo "[run.sh] all tasks done → ${JOBS_DIR}"
-echo "[run.sh] rewards:"
+# -o points at the jobs ROOT; --job-name is the single subdir harbor creates
+# under it (passing -o "$JOBS_DIR" too would double-nest jobs/<JOB>/<JOB>/).
+# --agent-setup-timeout-multiplier absorbs concurrent agent-setup (claude-code
+# npm install) contention that harbor's native -n can trigger
+# (AgentSetupTimeoutError).
+harbor run "${AGENT_ARGS[@]}" \
+  -p "$DATASET_DIR" \
+  -n "$CONCURRENCY" \
+  --agent-setup-timeout-multiplier "${INFRA_SETUP_TIMEOUT_MULT:-3}" \
+  -o "$JOBS_ROOT" --job-name "$JOB_NAME" "$@" \
+  2>&1 | tee "${JOBS_DIR}/run.log" || true
+
+echo "[run_claude_code.sh] done → ${JOBS_DIR}"
+echo "[run_claude_code.sh] rewards:"
 total=0; passed=0
-for r in "${JOBS_DIR}"/*/*/verifier/reward.txt; do
+for r in "${JOBS_DIR}"/*/verifier/reward.txt; do
   [[ -f "$r" ]] || continue
   val="$(cat "$r")"
   echo "  $(basename "$(dirname "$(dirname "$r")")"): ${val}"
   total=$((total + 1))
   [[ "$val" == "1" ]] && passed=$((passed + 1))
 done
-echo "[run.sh] ${passed}/${total} passed"
+echo "[run_claude_code.sh] ${passed}/${total} passed"
 
 # Exit nonzero if any task failed or no rewards were produced, so CI/automation
 # does not treat a failed (or empty) benchmark sweep as success.
 if (( total == 0 )); then
-  echo "[run.sh] ERROR: no reward files found — sweep produced no results" >&2
+  echo "[run_claude_code.sh] ERROR: no reward files found — sweep produced no results" >&2
   exit 1
 fi
 if (( passed != total )); then
-  echo "[run.sh] FAILED: $((total - passed)) task(s) did not pass" >&2
+  echo "[run_claude_code.sh] FAILED: $((total - passed)) task(s) did not pass" >&2
   exit 1
 fi

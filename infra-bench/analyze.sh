@@ -46,7 +46,7 @@ source "$ENV_FILE"
 # The header harbor does not forward on its own. SECURITY: export it as a host
 # env var and pass the TEMPLATE (not the value) so harbor stores '${...}' in the
 # analysis job config and resolves the real secret from the host env at run time
-# — the key never lands in any persisted artifact. See run.sh for the full
+# — the key never lands in any persisted artifact. See run_claude_code.sh for the full
 # rationale (harbor only name-redacts KEY/SECRET/TOKEN/... vars).
 export ANTHROPIC_CUSTOM_HEADERS="Ocp-Apim-Subscription-Key: ${AMD_LLM_GATEWAY_KEY}, user: ${NTID}"
 export ANTHROPIC_BASE_URL

@@ -30,7 +30,7 @@ faking output).
 | `vllm-aiter-debug` | Debug Triage | fix TheRock aiter hipconfig crash; CK FMHA prefill in torch profile + AITER ≥1.5× TTFT & ≥2× throughput vs AITER=0 | ✅ 1.0 |
 | `sglang-mmmu-ipc-crash` | Debug Triage | 2-GPU Qwen3.5-27B multimodal CUDA-IPC crash; enable SGLANG_USE_IPC_POOL_HANDLE_CACHE (keep IPC transport on) → grader reads live scheduler env + self-runs MMMU (acc >0.28) + agent names root cause | ✅ 1.0 |
 
-All 17 tasks pass their oracle (`run.sh -a oracle`, reward 1.0) in this
+All 17 tasks pass their oracle (`run_claude_code.sh -a oracle`, reward 1.0) in this
 environment. The original 10 GPU/ROCm oracles were validated 2026-07-14
 (`jobs/oracle-all-2026-07-14__10-56-38`); `cute-layout-composition`,
 `gluon-a8w8-mfma-att`, `dwconv3d-occupancy`, `triton-matmul-tuning`,
@@ -43,9 +43,9 @@ kernel-body-unchanged check).
 
 **Shared infra (all validated):** GPU-pool allocator (`claim_gpu.sh` flock +
 `pin_gpu.sh` BASH_ENV auto-pin) for safe concurrent trials; models mounted RO
-from `/data/models`; `run.sh`/`analyze.sh` inject the AMD gateway header;
+from `/data/models`; `run_claude_code.sh`/`analyze.sh` inject the AMD gateway header;
 `task.toml` sets `gpus=0` (GPU comes from the compose device-passthrough, not
-harbor's allocator). `run.sh` with no `-p` runs all tasks, one harbor job per
+harbor's allocator). `run_claude_code.sh` with no `-p` runs all tasks, one harbor job per
 package, up to `INFRA_PARALLEL` (default 4) concurrent.
 
 **Codex round-5 trust-boundary hardening (2026-07-16, all re-validated 1.0):**
