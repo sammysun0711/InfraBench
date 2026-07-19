@@ -802,7 +802,9 @@ Harbor upload status: the initial strict-valid full jobs were uploaded on
 2026-07-18 with private visibility. The Round 2 full-sweep upload candidates
 were uploaded on 2026-07-19 with `harbor upload`, also with private visibility;
 `opencode-minimax-m2.7` was already present on Hub and was not re-uploaded.
-The Round 3 `codex-gpt-5.6-terra` job was uploaded on 2026-07-19 with private
+The Round 3 `codex-gpt-5.6-terra` job, the Round 4
+`opencode-glm-5.2-fp8-onprem` job, and the Round 5
+`opencode-minimax-m3-onprem` job were uploaded on 2026-07-19 with private
 visibility.
 
 | Local job | Hub job ID | Visibility |
@@ -821,6 +823,8 @@ visibility.
 | `opencode-minimax-m2.7` | `e657b921-ee6e-4e1c-9db2-fe6e37b180af` | private |
 | `claude-opus-4.8` | `c44aee94-9864-441f-abd3-5c7d81718828` | private |
 | `codex-gpt-5.6-terra` | `34d208b6-9be5-4598-8485-e28e404e4974` | private |
+| `opencode-glm-5.2-fp8-onprem` | `4d6acd5f-a155-4c7b-bc77-c844a9819772` | private |
+| `opencode-minimax-m3-onprem` | `a3dd9a27-c6a5-4ca4-82dd-2c09b36f0970` | private |
 
 | Agent | Model | Job(s) used | Pass rate | Cost USD | Median agent execution | Exceptions | Structured trajectories missing |
 |---|---|---|---:|---:|---:|---:|---:|
@@ -1317,3 +1321,319 @@ Scoreboard: **18/20 passed**.
 | `sglang-sync-stall` | 1 | `sglang-sync-stall__r8DWsuB` | `infra-bench/jobs/codex-gpt-5.6-terra/sglang-sync-stall__r8DWsuB/agent/trajectory.json` |  |
 | `triton-matmul-tuning` | 1 | `triton-matmul-tuning__vcF53dr` | `infra-bench/jobs/codex-gpt-5.6-terra/triton-matmul-tuning__vcF53dr/agent/trajectory.json` |  |
 | `vllm-aiter-debug` | 1 | `vllm-aiter-debug__nc5paDp` | `infra-bench/jobs/codex-gpt-5.6-terra/vllm-aiter-debug__nc5paDp/agent/trajectory.json` |  |
+
+## Round 4 Results
+
+Run date: 2026-07-19
+
+Round 4 adds `GLM-5.2-FP8` through OpenCode against an on-prem SGLang server at
+`http://10.145.64.81:30000/v1`, using provider id `onprem`.
+
+Endpoint sanity: `GET /v1/models` on the on-prem server returned
+`/models/GLM-5.2-FP8`, and direct `chat/completions` calls accepted both
+`GLM-5.2-FP8` and `/models/GLM-5.2-FP8` as model ids. In this shell,
+`glm5.2-fp8-sgl/run_sgl_ping.sh` did not run because `sgl-eval` was not on
+`PATH`.
+
+After restarting the on-prem server with `--reasoning-parser glm45
+--tool-call-parser glm47`, the GLM smoke produced structured OpenCode
+`tool_use` events and passed. The first failed smoke is retained below as a
+parser-configuration diagnostic.
+
+### Round 4 Smoke Tests
+
+| Agent | Model | Job | Reward | Cost USD | Run log | Trajectory/log |
+|---|---|---|---:|---:|---|---|
+| opencode | `GLM-5.2-FP8` | `smoke-opencode-glm-5.2-fp8-onprem` | 0/1 | 0.010696 | `infra-bench/jobs/smoke-opencode-glm-5.2-fp8-onprem/run.log` | `infra-bench/jobs/smoke-opencode-glm-5.2-fp8-onprem/hello-rocm__akDTut6/agent/trajectory.json` |
+| opencode | `GLM-5.2-FP8` | `smoke-opencode-glm-5.2-fp8-onprem-rerun` | 1/1 | 0.032062 | `infra-bench/jobs/smoke-opencode-glm-5.2-fp8-onprem-rerun/run.log` | `infra-bench/jobs/smoke-opencode-glm-5.2-fp8-onprem-rerun/hello-rocm__dyvdR6s/agent/trajectory.json` |
+
+### `GLM-5.2-FP8` via OpenCode On-Prem
+
+Smoke command:
+
+```bash
+JOB_NAME=smoke-opencode-glm-5.2-fp8-onprem \
+  MODEL=GLM-5.2-FP8 \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://10.145.64.81:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  ./run_open_code.sh -i hello-rocm
+```
+
+First smoke result summary:
+
+```text
+Trials: 1
+Exceptions: 0
+Reward 1.0: 0
+Reward 0.0: 1
+Cost USD: 0.010696
+Input tokens: 7282
+Cache tokens: 0
+Output tokens: 114
+Results written to /home/xisun/InfraBench/infra-bench/jobs/smoke-opencode-glm-5.2-fp8-onprem/result.json
+Run log: /home/xisun/InfraBench/infra-bench/jobs/smoke-opencode-glm-5.2-fp8-onprem/run.log
+```
+
+Failure note: this was not a network or authentication failure. OpenCode
+received a plain text response containing a literal
+`<tool_call>bash ...</tool_call>` block, so no tool was executed and the task
+never wrote `/app/gpu_report.json`. The verifier failed all four `hello-rocm`
+checks because `/app/gpu_report.json` was missing. SGLang's GLM-5.2 guidance says
+to serve with `--reasoning-parser glm45 --tool-call-parser glm47`; the `glm47`
+tool-call parser is required for GLM-5.2's newer `<tool_call>...<arg_key>...`
+format. Restart the on-prem server with those parser flags, then rerun this
+smoke before starting the full `opencode-glm-5.2-fp8-onprem` sweep.
+
+Rerun smoke command after parser fix:
+
+```bash
+JOB_NAME=smoke-opencode-glm-5.2-fp8-onprem-rerun \
+  MODEL=GLM-5.2-FP8 \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://10.145.64.81:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  ./run_open_code.sh -i hello-rocm
+```
+
+Rerun result summary:
+
+```text
+Trials: 1
+Exceptions: 0
+Reward 1.0: 1
+Reward 0.0: 0
+Cost USD: 0.032062
+Input tokens: 22295
+Cache tokens: 0
+Output tokens: 193
+Results written to /home/xisun/InfraBench/infra-bench/jobs/smoke-opencode-glm-5.2-fp8-onprem-rerun/result.json
+Run log: /home/xisun/InfraBench/infra-bench/jobs/smoke-opencode-glm-5.2-fp8-onprem-rerun/run.log
+```
+
+Rerun note: the rerun trajectory contains structured OpenCode `tool_use` events
+for `bash` and `read`, and the verifier passed all four `hello-rocm` checks.
+
+Per-task trajectory:
+
+| Task | Reward | Trial | Trajectory/log | Exception |
+|---|---:|---|---|---|
+| `hello-rocm` | 0 | `hello-rocm__akDTut6` | `infra-bench/jobs/smoke-opencode-glm-5.2-fp8-onprem/hello-rocm__akDTut6/agent/trajectory.json` |  |
+| `hello-rocm` | 1 | `hello-rocm__dyvdR6s` | `infra-bench/jobs/smoke-opencode-glm-5.2-fp8-onprem-rerun/hello-rocm__dyvdR6s/agent/trajectory.json` |  |
+
+Full sweep command:
+
+```bash
+JOB_NAME=opencode-glm-5.2-fp8-onprem MODEL=GLM-5.2-FP8 \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://10.145.64.81:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  INFRA_PARALLEL=4 INFRABENCH_GPU_COUNT=8 ./run_open_code.sh
+```
+
+Operational note: the first full-sweep attempt used `INFRA_PARALLEL=6` and was
+aborted after the host filled its disk (`No space left on device`). That partial
+invalid job was moved to
+`infra-bench/jobs_bk/opencode-glm-5.2-fp8-onprem-diskfull-20260719-051434/`.
+After Docker cleanup, the final upload candidate was rerun with
+`INFRA_PARALLEL=4`. During the final run, the on-prem SGLang server stopped
+serving connections once; after it was restarted, the waiting OpenCode trials
+resumed and the suite completed.
+
+Full result summary:
+
+```text
+Trials: 20
+Exceptions: 5
+Reward 1.0: 15
+Reward 0.0: 5
+Mean reward: 0.750
+Total runtime: 2h 55m 42s
+Cost USD: 88.395059
+Median agent execution: 25m 26s
+Input tokens: 60405209
+Cache tokens: 0
+Output tokens: 869947
+Results written to /home/xisun/InfraBench/infra-bench/jobs/opencode-glm-5.2-fp8-onprem/result.json
+Run log: /home/xisun/InfraBench/infra-bench/jobs/opencode-glm-5.2-fp8-onprem/run.log
+```
+
+Exception counts: `NonZeroAgentExitCodeError`=4, `AgentTimeoutError`=1.
+
+All 20 trials have structured `agent/trajectory.json` files. Each trial also
+has the raw OpenCode event log at `agent/opencode.txt`. The job metadata is
+normalized as
+`agent_info.name=opencode`, `agent_info.model_info.provider=onprem`, and
+`agent_info.model_info.name=GLM-5.2-FP8`.
+
+Scoreboard: **15/20 passed**.
+
+Harbor upload: private job `4d6acd5f-a155-4c7b-bc77-c844a9819772`, uploaded
+with `harbor upload /home/xisun/InfraBench/infra-bench/jobs/opencode-glm-5.2-fp8-onprem`
+on 2026-07-19.
+
+| Task | Reward | Trial | Trajectory/log | Exception |
+|---|---:|---|---|---|
+| `cute-layout-composition` | 0 | `cute-layout-composition__GVaxiXS` | `infra-bench/jobs/opencode-glm-5.2-fp8-onprem/cute-layout-composition__GVaxiXS/agent/trajectory.json` | `AgentTimeoutError` |
+| `dwconv3d-occupancy` | 1 | `dwconv3d-occupancy__9yGEyKo` | `infra-bench/jobs/opencode-glm-5.2-fp8-onprem/dwconv3d-occupancy__9yGEyKo/agent/trajectory.json` |  |
+| `engram-triton-kernel` | 1 | `engram-triton-kernel__bCeZHcC` | `infra-bench/jobs/opencode-glm-5.2-fp8-onprem/engram-triton-kernel__bCeZHcC/agent/trajectory.json` |  |
+| `flydsl-cdna4-preshuffle-gemm` | 1 | `flydsl-cdna4-preshuffle-gemm__5AWpAdR` | `infra-bench/jobs/opencode-glm-5.2-fp8-onprem/flydsl-cdna4-preshuffle-gemm__5AWpAdR/agent/trajectory.json` |  |
+| `gemm-fp8-ptpc-quant` | 1 | `gemm-fp8-ptpc-quant__aw7EMWd` | `infra-bench/jobs/opencode-glm-5.2-fp8-onprem/gemm-fp8-ptpc-quant__aw7EMWd/agent/trajectory.json` |  |
+| `gemma4-gemm-tuning` | 1 | `gemma4-gemm-tuning__RDEzjLk` | `infra-bench/jobs/opencode-glm-5.2-fp8-onprem/gemma4-gemm-tuning__RDEzjLk/agent/trajectory.json` |  |
+| `gemma4-sglang-serving-opt` | 0 | `gemma4-sglang-serving-opt__q8CDnSw` | `infra-bench/jobs/opencode-glm-5.2-fp8-onprem/gemma4-sglang-serving-opt__q8CDnSw/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+| `gluon-a8w8-mfma-att` | 1 | `gluon-a8w8-mfma-att__JiJkdJc` | `infra-bench/jobs/opencode-glm-5.2-fp8-onprem/gluon-a8w8-mfma-att__JiJkdJc/agent/trajectory.json` |  |
+| `hello-rocm` | 1 | `hello-rocm__8c4xSR4` | `infra-bench/jobs/opencode-glm-5.2-fp8-onprem/hello-rocm__8c4xSR4/agent/trajectory.json` |  |
+| `hotspot-analysis-torch-profiler` | 1 | `hotspot-analysis-torch-profiler__r8MFsKV` | `infra-bench/jobs/opencode-glm-5.2-fp8-onprem/hotspot-analysis-torch-profiler__r8MFsKV/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+| `llm-fp8-quantize` | 0 | `llm-fp8-quantize__iSKHqNV` | `infra-bench/jobs/opencode-glm-5.2-fp8-onprem/llm-fp8-quantize__iSKHqNV/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+| `llvm-simple-constant-propagation` | 1 | `llvm-simple-constant-propagation__5KqLMti` | `infra-bench/jobs/opencode-glm-5.2-fp8-onprem/llvm-simple-constant-propagation__5KqLMti/agent/trajectory.json` |  |
+| `mem-bandwidth-bench` | 1 | `mem-bandwidth-bench__SSgiCFm` | `infra-bench/jobs/opencode-glm-5.2-fp8-onprem/mem-bandwidth-bench__SSgiCFm/agent/trajectory.json` |  |
+| `paged-attention-hd256` | 0 | `paged-attention-hd256__AXK2RYB` | `infra-bench/jobs/opencode-glm-5.2-fp8-onprem/paged-attention-hd256__AXK2RYB/agent/trajectory.json` |  |
+| `pointnet2-hipify` | 1 | `pointnet2-hipify__9xe2M3G` | `infra-bench/jobs/opencode-glm-5.2-fp8-onprem/pointnet2-hipify__9xe2M3G/agent/trajectory.json` |  |
+| `qr-rmsnorm-fusion` | 0 | `qr-rmsnorm-fusion__nutoW45` | `infra-bench/jobs/opencode-glm-5.2-fp8-onprem/qr-rmsnorm-fusion__nutoW45/agent/trajectory.json` |  |
+| `sglang-mmmu-ipc-crash` | 1 | `sglang-mmmu-ipc-crash__edxJ36y` | `infra-bench/jobs/opencode-glm-5.2-fp8-onprem/sglang-mmmu-ipc-crash__edxJ36y/agent/trajectory.json` |  |
+| `sglang-sync-stall` | 1 | `sglang-sync-stall__KZd2JHd` | `infra-bench/jobs/opencode-glm-5.2-fp8-onprem/sglang-sync-stall__KZd2JHd/agent/trajectory.json` |  |
+| `triton-matmul-tuning` | 1 | `triton-matmul-tuning__mdoawbX` | `infra-bench/jobs/opencode-glm-5.2-fp8-onprem/triton-matmul-tuning__mdoawbX/agent/trajectory.json` |  |
+| `vllm-aiter-debug` | 1 | `vllm-aiter-debug__b4AwTVJ` | `infra-bench/jobs/opencode-glm-5.2-fp8-onprem/vllm-aiter-debug__b4AwTVJ/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+
+## Round 5 Results
+
+Run date: 2026-07-19
+
+Round 5 adds `MiniMax-M3` through OpenCode against an on-prem vLLM server at
+`http://10.145.64.81:30000/v1`, using provider id `onprem`. The server launch
+script is `minimax-m3-vllm/launch_vllm_minimax_m3_server.sh`.
+
+Endpoint sanity: `GET /v1/models` returned `/models/MiniMax-M3`. The saved
+`minimax-m3-vllm/run_sgl_ping.sh` log returned `pong`, and
+`minimax-m3-vllm/run_sgl_gms8k.sh` completed 200 GSM8K examples with `98.50%`
+score and `0.00%` error rate.
+
+### Round 5 Smoke Tests
+
+| Agent | Model | Job | Reward | Cost USD | Run log | Trajectory/log |
+|---|---|---|---:|---:|---|---|
+| opencode | `MiniMax-M3` | `smoke-opencode-minimax-m3-onprem` | 0/1 | - | `infra-bench/jobs/smoke-opencode-minimax-m3-onprem/run.log` | `infra-bench/jobs/smoke-opencode-minimax-m3-onprem/hello-rocm__9Knkfsn/agent/opencode.txt` (`trajectory.json` missing) |
+| opencode | `/models/MiniMax-M3` | `smoke-opencode-minimax-m3-onprem-modelpath` | 1/1 | 0.014269 | `infra-bench/jobs/smoke-opencode-minimax-m3-onprem-modelpath/run.log` | `infra-bench/jobs/smoke-opencode-minimax-m3-onprem-modelpath/hello-rocm__g22kbaD/agent/trajectory.json` |
+
+### `MiniMax-M3` via OpenCode On-Prem
+
+First smoke command:
+
+```bash
+JOB_NAME=smoke-opencode-minimax-m3-onprem MODEL=MiniMax-M3 \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://10.145.64.81:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  ./run_open_code.sh -i hello-rocm
+```
+
+First smoke result summary:
+
+```text
+Trials: 1
+Exceptions: 1
+Reward 1.0: 0
+Reward 0.0: 1
+Exception: NonZeroAgentExitCodeError
+Results written to /home/xisun/InfraBench/infra-bench/jobs/smoke-opencode-minimax-m3-onprem/result.json
+Run log: /home/xisun/InfraBench/infra-bench/jobs/smoke-opencode-minimax-m3-onprem/run.log
+```
+
+Failure note: this was a model-id mismatch. vLLM advertised only
+`/models/MiniMax-M3`, but OpenCode requested `MiniMax-M3`; the server returned
+`404` with `The model MiniMax-M3 does not exist`.
+
+Rerun smoke command with the exact vLLM model id:
+
+```bash
+JOB_NAME=smoke-opencode-minimax-m3-onprem-modelpath MODEL=/models/MiniMax-M3 \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://10.145.64.81:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  ./run_open_code.sh -i hello-rocm
+```
+
+Rerun result summary:
+
+```text
+Trials: 1
+Exceptions: 0
+Reward 1.0: 1
+Reward 0.0: 0
+Cost USD: 0.014269
+Input tokens: 22973
+Cache tokens: 0
+Output tokens: 202
+Results written to /home/xisun/InfraBench/infra-bench/jobs/smoke-opencode-minimax-m3-onprem-modelpath/result.json
+Run log: /home/xisun/InfraBench/infra-bench/jobs/smoke-opencode-minimax-m3-onprem-modelpath/run.log
+```
+
+Full sweep command:
+
+```bash
+JOB_NAME=opencode-minimax-m3-onprem MODEL=/models/MiniMax-M3 \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://10.145.64.81:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  INFRA_PARALLEL=4 INFRABENCH_GPU_COUNT=8 ./run_open_code.sh
+```
+
+Full result summary:
+
+```text
+Trials: 20
+Exceptions: 6
+Reward 1.0: 12
+Reward 0.0: 8
+Mean reward: 0.600
+Total runtime: 1h 30m 2s
+Cost USD: 59.532313
+Median agent execution: 7m 51s
+Input tokens: 96050278
+Cache tokens: 0
+Output tokens: 792561
+Results written to /home/xisun/InfraBench/infra-bench/jobs/opencode-minimax-m3-onprem/result.json
+Run log: /home/xisun/InfraBench/infra-bench/jobs/opencode-minimax-m3-onprem/run.log
+```
+
+Exception counts: `NonZeroAgentExitCodeError`=3, `NetworkConnectionError`=1,
+`AgentTimeoutError`=1, `ApiRateLimitError`=1.
+
+All 20 trials have structured `agent/trajectory.json` files. Each trial also
+has the raw OpenCode event log at `agent/opencode.txt`. The Hub display metadata
+is normalized as `agent_info.name=opencode`,
+`agent_info.model_info.provider=onprem`, and
+`agent_info.model_info.name=MiniMax-M3`; the saved run config still records
+`config.agent.model_name=onprem/models/MiniMax-M3` and the vLLM model key
+`/models/MiniMax-M3` because those were required for the on-prem endpoint.
+
+Scoreboard: **12/20 passed**.
+
+Harbor upload: private job `a3dd9a27-c6a5-4ca4-82dd-2c09b36f0970`, uploaded
+with `harbor upload /home/xisun/InfraBench/infra-bench/jobs/opencode-minimax-m3-onprem`
+on 2026-07-19. The Hub job was deleted and re-uploaded on 2026-07-19 after
+normalizing the display model metadata; Hub now shows `Models: MiniMax-M3` and
+trial rows as `onprem/MiniMax-M3`.
+
+| Task | Reward | Trial | Trajectory/log | Exception |
+|---|---:|---|---|---|
+| `cute-layout-composition` | 1 | `cute-layout-composition__uNdcuur` | `infra-bench/jobs/opencode-minimax-m3-onprem/cute-layout-composition__uNdcuur/agent/trajectory.json` |  |
+| `dwconv3d-occupancy` | 1 | `dwconv3d-occupancy__LWndFwY` | `infra-bench/jobs/opencode-minimax-m3-onprem/dwconv3d-occupancy__LWndFwY/agent/trajectory.json` |  |
+| `engram-triton-kernel` | 1 | `engram-triton-kernel__wdRDMf8` | `infra-bench/jobs/opencode-minimax-m3-onprem/engram-triton-kernel__wdRDMf8/agent/trajectory.json` |  |
+| `flydsl-cdna4-preshuffle-gemm` | 0 | `flydsl-cdna4-preshuffle-gemm__GZMWy3w` | `infra-bench/jobs/opencode-minimax-m3-onprem/flydsl-cdna4-preshuffle-gemm__GZMWy3w/agent/trajectory.json` | `AgentTimeoutError` |
+| `gemm-fp8-ptpc-quant` | 1 | `gemm-fp8-ptpc-quant__PC8rCgd` | `infra-bench/jobs/opencode-minimax-m3-onprem/gemm-fp8-ptpc-quant__PC8rCgd/agent/trajectory.json` |  |
+| `gemma4-gemm-tuning` | 0 | `gemma4-gemm-tuning__hsx4xVJ` | `infra-bench/jobs/opencode-minimax-m3-onprem/gemma4-gemm-tuning__hsx4xVJ/agent/trajectory.json` |  |
+| `gemma4-sglang-serving-opt` | 0 | `gemma4-sglang-serving-opt__Ue3DBst` | `infra-bench/jobs/opencode-minimax-m3-onprem/gemma4-sglang-serving-opt__Ue3DBst/agent/trajectory.json` | `NetworkConnectionError` |
+| `gluon-a8w8-mfma-att` | 1 | `gluon-a8w8-mfma-att__xyERLbo` | `infra-bench/jobs/opencode-minimax-m3-onprem/gluon-a8w8-mfma-att__xyERLbo/agent/trajectory.json` |  |
+| `hello-rocm` | 1 | `hello-rocm__KAjdKJ2` | `infra-bench/jobs/opencode-minimax-m3-onprem/hello-rocm__KAjdKJ2/agent/trajectory.json` |  |
+| `hotspot-analysis-torch-profiler` | 0 | `hotspot-analysis-torch-profiler__A9VJrEQ` | `infra-bench/jobs/opencode-minimax-m3-onprem/hotspot-analysis-torch-profiler__A9VJrEQ/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+| `llm-fp8-quantize` | 1 | `llm-fp8-quantize__DUgyQfY` | `infra-bench/jobs/opencode-minimax-m3-onprem/llm-fp8-quantize__DUgyQfY/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+| `llvm-simple-constant-propagation` | 1 | `llvm-simple-constant-propagation__UrnBcWh` | `infra-bench/jobs/opencode-minimax-m3-onprem/llvm-simple-constant-propagation__UrnBcWh/agent/trajectory.json` |  |
+| `mem-bandwidth-bench` | 1 | `mem-bandwidth-bench__56kN9UP` | `infra-bench/jobs/opencode-minimax-m3-onprem/mem-bandwidth-bench__56kN9UP/agent/trajectory.json` |  |
+| `paged-attention-hd256` | 0 | `paged-attention-hd256__yUnVsTq` | `infra-bench/jobs/opencode-minimax-m3-onprem/paged-attention-hd256__yUnVsTq/agent/trajectory.json` |  |
+| `pointnet2-hipify` | 1 | `pointnet2-hipify__EswnDZJ` | `infra-bench/jobs/opencode-minimax-m3-onprem/pointnet2-hipify__EswnDZJ/agent/trajectory.json` |  |
+| `qr-rmsnorm-fusion` | 0 | `qr-rmsnorm-fusion__p9WWpqH` | `infra-bench/jobs/opencode-minimax-m3-onprem/qr-rmsnorm-fusion__p9WWpqH/agent/trajectory.json` |  |
+| `sglang-mmmu-ipc-crash` | 1 | `sglang-mmmu-ipc-crash__L62bXT7` | `infra-bench/jobs/opencode-minimax-m3-onprem/sglang-mmmu-ipc-crash__L62bXT7/agent/trajectory.json` |  |
+| `sglang-sync-stall` | 0 | `sglang-sync-stall__eHCnWJ2` | `infra-bench/jobs/opencode-minimax-m3-onprem/sglang-sync-stall__eHCnWJ2/agent/trajectory.json` | `ApiRateLimitError` |
+| `triton-matmul-tuning` | 1 | `triton-matmul-tuning__22shJaC` | `infra-bench/jobs/opencode-minimax-m3-onprem/triton-matmul-tuning__22shJaC/agent/trajectory.json` |  |
+| `vllm-aiter-debug` | 0 | `vllm-aiter-debug__MUCHkDo` | `infra-bench/jobs/opencode-minimax-m3-onprem/vllm-aiter-debug__MUCHkDo/agent/trajectory.json` | `NonZeroAgentExitCodeError` |

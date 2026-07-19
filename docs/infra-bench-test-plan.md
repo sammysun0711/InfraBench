@@ -1,8 +1,9 @@
 # InfraBench Cross-Agent × Model Test Plan
 
 Goal: run the full 20-task InfraBench suite across three agents, each driving
-several models through the AMD LLM gateway, and collect a comparable
-agent × model scoreboard (reward, cost, latency) on the Harbor hub.
+several models through the AMD LLM gateway or a compatible on-prem endpoint, and
+collect a comparable agent × model scoreboard (reward, cost, latency) on the
+Harbor hub.
 
 All commands run from `infra-bench/`. Each runner executes `tasks/` as a **local
 dataset** so every hub Jobs-table column fills (Datasets=`infra-bench`, Agents,
@@ -19,9 +20,12 @@ Each model family is driven by the agent that natively speaks its API:
 | **claude-code** | `run_claude_code.sh` | (blank — Anthropic gateway) | `claude-opus-4.6`, `claude-haiku-4.5`, `Claude-Sonnet-5`, `claude-opus-4.8` |
 | **codex** | `run_codex.sh` | `openai` | `gpt-5.6-sol`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.6-terra` |
 | **opencode** | `run_open_code.sh` | `amd` | `DeepSeek-V4-Flash` (retest), `MiniMax-M2.7`, `Kimi-K2.6`, `Qwen3.6-35B-A3B`, `gemini-3.5-flash`, `Gemma-4-31B` |
+| **opencode** | `run_open_code.sh` | `onprem` | `GLM-5.2-FP8` (Round 4, SGLang server at `http://10.145.64.81:30000/v1`), `MiniMax-M3` (Round 5, vLLM server at `http://10.145.64.81:30000/v1`), `Kimi-K2.7-Code` (Round 6, vLLM server at `http://10.145.64.81:30000/v1`) |
 
-All 14 planned models are available in the AMD LLM gateway catalog
-(`/v1/models`).
+All 14 gateway-backed planned models are available in the AMD LLM gateway
+catalog (`/v1/models`). The Round 4 `GLM-5.2-FP8` run uses an on-prem SGLang
+server because the AMD LLM gateway deployment is down. The Round 5 `MiniMax-M3`
+and Round 6 `Kimi-K2.7-Code` runs use on-prem vLLM servers.
 
 `Grok-4.3` is excluded from the active test plan. The dashboard shows the model
 as operational, but the current AMD Unified endpoint and the runner's configured
@@ -34,8 +38,8 @@ gateway route reject `Grok-4.3` for both Chat Completions and Responses with
 > - **chat models** (DeepSeek, MiniMax, Kimi, Qwen, Gemini, GLM) → `@ai-sdk/openai-compatible` (chat/completions)
 >
 > The models in *this* plan that go through opencode (DeepSeek-V4-Flash,
-> MiniMax-M2.7, Kimi-K2.6, Qwen3.6-35B-A3B, gemini-3.5-flash, and
-> Gemma-4-31B) are treated as chat models → always pass
+> MiniMax-M2.7, MiniMax-M3, Kimi-K2.6, Kimi-K2.7-Code,
+> Qwen3.6-35B-A3B, gemini-3.5-flash, and Gemma-4-31B) are treated as chat models → always pass
 > `AMD_OPENCODE_NPM='@ai-sdk/openai-compatible'`.
 
 ---
@@ -70,6 +74,8 @@ Every runner shares the same interface:
 | `JOB_NAME` | hub job name (else timestamp) | `$(date +%F__%H-%M-%S)` |
 | `AGENT=oracle` | (claude runner only) run the oracle | claude-code |
 | `AMD_OPENCODE_NPM` | (opencode only) AI-SDK adapter | `@ai-sdk/openai` |
+| `AMD_OPENCODE_PROVIDER` | (opencode only) provider id / Hub provider column | `amd` |
+| `AMD_CODEX_BASE_URL` | codex/opencode base URL override | AMD Unified gateway |
 
 Task selection (all runners): `-i <task>` include / `-x <task>` exclude
 (repeatable); no flag = all 20. Extra flags (`-k 3`, `--timeout-multiplier 1.5`)
@@ -99,6 +105,30 @@ JOB_NAME=smoke-codex-gpt-5.6-terra MODEL=gpt-5.6-terra ./run_codex.sh -i hello-r
 
 # opencode (chat model → openai-compatible adapter)
 MODEL=DeepSeek-V4-Flash AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' ./run_open_code.sh -i hello-rocm
+
+# opencode round-4 on-prem SGLang model
+JOB_NAME=smoke-opencode-glm-5.2-fp8-onprem \
+  MODEL=GLM-5.2-FP8 \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://10.145.64.81:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  ./run_open_code.sh -i hello-rocm
+
+# opencode round-5 on-prem vLLM model; use the exact model id served by vLLM
+JOB_NAME=smoke-opencode-minimax-m3-onprem-modelpath \
+  MODEL=/models/MiniMax-M3 \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://10.145.64.81:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  ./run_open_code.sh -i hello-rocm
+
+# opencode round-6 on-prem vLLM model; use the exact model id served by vLLM
+JOB_NAME=smoke-opencode-kimi-k2.7-code-onprem-modelpath \
+  MODEL=/models/Kimi-K2.7-Code \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://10.145.64.81:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  ./run_open_code.sh -i hello-rocm
 ```
 
 For newly added opencode models and the DeepSeek retest, run a model-specific
@@ -146,6 +176,19 @@ JOB_NAME=opencode-gemini-3.5-flash MODEL=gemini-3.5-flash \
   AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' INFRA_PARALLEL=6 ./run_open_code.sh
 JOB_NAME=opencode-gemma-4-31b MODEL=Gemma-4-31B \
   AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' INFRA_PARALLEL=6 ./run_open_code.sh
+
+# ---- opencode (on-prem SGLang, provider=onprem; chat adapter) ----
+JOB_NAME=opencode-glm-5.2-fp8-onprem MODEL=GLM-5.2-FP8 \
+  AMD_OPENCODE_PROVIDER=onprem AMD_CODEX_BASE_URL=http://10.145.64.81:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' INFRA_PARALLEL=4 ./run_open_code.sh
+
+# ---- opencode (on-prem vLLM, provider=onprem; chat adapter) ----
+JOB_NAME=opencode-minimax-m3-onprem MODEL=/models/MiniMax-M3 \
+  AMD_OPENCODE_PROVIDER=onprem AMD_CODEX_BASE_URL=http://10.145.64.81:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' INFRA_PARALLEL=4 ./run_open_code.sh
+JOB_NAME=opencode-kimi-k2.7-code-onprem MODEL=/models/Kimi-K2.7-Code \
+  AMD_OPENCODE_PROVIDER=onprem AMD_CODEX_BASE_URL=http://10.145.64.81:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' INFRA_PARALLEL=4 ./run_open_code.sh
 ```
 
 Each runner prints a `passed/total` summary and **exits nonzero** if any task
@@ -172,10 +215,13 @@ falls back to the input rate in `run_open_code.sh`.
 |---|---|---:|---:|---:|
 | `DeepSeek-V4-Flash` | `deepseek-v4-flash` | 0.14 | 0.28 | 0.0028 |
 | `MiniMax-M2.7` | `sambanova/MiniMax-M2.7` | 0.60 | 2.40 | 0.60 |
+| `MiniMax-M3` | `minimax-m3` | 0.60 | 2.40 | 0.12 |
+| `Kimi-K2.7-Code` | `kimi-k2.7-code` | 0.95 | 4.00 | 0.19 |
 | `Kimi-K2.6` | `kimi-k2.6` | 0.95 | 4.00 | 0.16 |
 | `Qwen3.6-35B-A3B` | `scaleway/qwen/qwen3.6-35b-a3b` | 0.25 | 1.50 | 0.25 |
 | `gemini-3.5-flash` | `gemini-3.5-flash` | 1.50 | 9.00 | 0.15 |
 | `Gemma-4-31B` | `bedrock_mantle/google.gemma-4-31b` | 0.14 | 0.40 | 0.14 |
+| `GLM-5.2-FP8` | `glm-5.2` | 1.40 | 4.40 | 0.26 |
 
 - **latency** — `result.json` phase timings (`agent_execution`).
 - **failure triage** — for reward-0: is it a genuine miss (verifier ran, see
@@ -200,12 +246,37 @@ task latency.
 - **opencode reasoning vs chat adapter** — wrong adapter → 400
   "reasoning_effort not supported on /v1/chat/completions" (reasoning model on
   chat adapter) or a tool-call failure. Match per the adapter rule above.
+- **On-prem GLM routing:** `GLM-5.2-FP8` is not routed through the AMD gateway in
+  Round 4. Use `AMD_OPENCODE_PROVIDER=onprem`,
+  `AMD_CODEX_BASE_URL=http://10.145.64.81:30000/v1`, and
+  `AMD_OPENCODE_NPM='@ai-sdk/openai-compatible'`. The first `hello-rocm` smoke
+  reached the server but failed because the model emitted a literal
+  `<tool_call>...</tool_call>` text block instead of an OpenAI structured tool
+  call. Restart the SGLang server with `--reasoning-parser glm45` and
+  `--tool-call-parser glm47`, then rerun the smoke before starting the full GLM
+  sweep. The recorded full sweep used `INFRA_PARALLEL=4`; an earlier 6-way
+  attempt was abandoned after the host ran out of disk space while building and
+  running task containers.
+- **On-prem MiniMax-M3 routing:** `MiniMax-M3` is served by vLLM from
+  `/home/xisun/InfraBench/minimax-m3-vllm/launch_vllm_minimax_m3_server.sh`.
+  vLLM advertises the model id as `/models/MiniMax-M3`, not `MiniMax-M3`, so set
+  `MODEL=/models/MiniMax-M3`. A smoke using `MODEL=MiniMax-M3` reaches the
+  server but fails with `The model MiniMax-M3 does not exist`.
+- **On-prem Kimi-K2.7-Code routing:** `Kimi-K2.7-Code` is served by vLLM from
+  `/home/xisun/InfraBench/kimi-k2.7-code-vllm/launch_vllm_kimi_k2.7_code_server.sh`.
+  The launch uses `--tool-call-parser kimi_k2`, `--enable-auto-tool-choice`, and
+  `--reasoning-parser kimi_k2`. vLLM advertises only `/models/Kimi-K2.7-Code`,
+  so set `MODEL=/models/Kimi-K2.7-Code` for OpenCode runs. Before Harbor upload,
+  normalize the saved display metadata from `/models/Kimi-K2.7-Code` to
+  `Kimi-K2.7-Code` while preserving `config.agent.model_name=onprem/models/Kimi-K2.7-Code`
+  for reproducibility.
 - **Backend flakiness (gateway-side, not our config):** if a model 404s/500s at
   the gateway, treat it as a backend outage; retry later or skip. The current
   opencode plan assumes `DeepSeek-V4-Flash`, `Kimi-K2.6`,
   `Qwen3.6-35B-A3B`, `gemini-3.5-flash`, and `Gemma-4-31B` are available in the
-  AMD LLM gateway. `Grok-4.3` is skipped until the gateway exposes a working
-  model id or route for this runner.
+  AMD LLM gateway. `GLM-5.2-FP8` is skipped on the gateway until that deployment
+  recovers; `Grok-4.3` is skipped until the gateway exposes a working model id
+  or route for this runner.
 - **Gateway pressure at high concurrency:** long agentic sessions occasionally
   drop (`UnknownApiError`, exit 143). If a sweep shows several such exceptions,
   lower `INFRA_PARALLEL` or add `-k 2` (auto-retry attempts).
@@ -222,8 +293,9 @@ task latency.
 
 1. Smoke test (hello-rocm) for all 3 agents → confirm auth.
 2. Full sweep, one model at a time (serial across models; `INFRA_PARALLEL`
-   parallelizes tasks within a model). 14 sweeps total, including the
-   `DeepSeek-V4-Flash` opencode retest.
+   parallelizes tasks within a model). 17 sweeps total, including the
+   `DeepSeek-V4-Flash` opencode retest, the Round 4 on-prem GLM run, the
+   Round 5 on-prem MiniMax-M3 run, and the Round 6 on-prem Kimi-K2.7-Code run.
 3. Triage reward-0s: separate genuine misses from infra/gateway errors; re-run
    infra failures.
 4. Build the agent × model scoreboard (pass-rate, cost, latency).
