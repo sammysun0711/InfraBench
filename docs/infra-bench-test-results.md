@@ -356,10 +356,23 @@ Command:
 JOB_NAME=claude-sonnet-5 MODEL=Claude-Sonnet-5 INFRA_PARALLEL=6 INFRABENCH_GPU_COUNT=8 ./run_claude_code.sh
 ```
 
-The job completed 20 trials but Harbor did not write `finished_at` because the
-last `llm-fp8-quantize` container stayed up after an `AgentTimeoutError`. I
-stopped the stale Harbor process/container after confirming the timeout and
-trajectory were present.
+The job completed 20 trials but Harbor initially did not write top-level
+`finished_at` because the last `llm-fp8-quantize` container stayed up after an
+`AgentTimeoutError`. I stopped the stale Harbor process/container after
+confirming the timeout and trajectory were present. The first Hub upload used
+the upload/finalization time as `finished_at`, which made the Hub duration show
+about 18h 51m instead of the real 1h 42m run span.
+
+Timestamp repair: local `result.json` was backed up to
+`infra-bench/jobs_bk/claude-sonnet-5-result-timestamp-fix-20260719-002029/`,
+then patched to normalize the aggregate `started_at` to UTC and fill
+`finished_at` from the final job update. The deleted Hub job was re-uploaded
+with the same UUID. Hub now stores:
+
+```text
+started_at: 2026-07-17T19:26:52.146627+00:00
+finished_at: 2026-07-17T21:09:30.170858+00:00
+```
 
 Log/result paths:
 
@@ -376,7 +389,10 @@ errored: 6
 running: 0
 pending: 0
 cost_usd: 26.448789
-finished_at: null
+started_at: 2026-07-17T19:26:52.146627Z
+updated_at: 2026-07-17T21:09:30.170858Z
+finished_at: 2026-07-17T21:09:30.170858Z
+duration: 1:42:38.024231
 ```
 
 Effective scoreboard for this model, counting the timed-out
@@ -615,6 +631,11 @@ Per-task trajectories:
 
 ### `DeepSeek-V4-Flash` via OpenCode
 
+Historical note: this subsection records the first DeepSeek sweep. The local
+`infra-bench/jobs/opencode-deepseek-v4-flash` directory was later replaced by
+the Round 2 retest artifacts under the same canonical job name; use the Round 2
+DeepSeek section below for the current local/upload candidate.
+
 Command:
 
 ```bash
@@ -777,9 +798,12 @@ Upload metadata normalization: Claude Code trial `agent_info.model_info.provider
 is set to `anthropic`; Codex job, trial config, lock, and result agent names are
 set to `codex` rather than the local wrapper import path.
 
-Harbor upload status: the seven strict-valid full jobs were uploaded on
-2026-07-18 with `uvx harbor upload -c 4`. Harbor reported each upload as
-`Uploaded 20 trial(s)` with private visibility.
+Harbor upload status: the initial strict-valid full jobs were uploaded on
+2026-07-18 with private visibility. The Round 2 full-sweep upload candidates
+were uploaded on 2026-07-19 with `harbor upload`, also with private visibility;
+`opencode-minimax-m2.7` was already present on Hub and was not re-uploaded.
+The Round 3 `codex-gpt-5.6-terra` job was uploaded on 2026-07-19 with private
+visibility.
 
 | Local job | Hub job ID | Visibility |
 |---|---|---|
@@ -789,7 +813,14 @@ Harbor upload status: the seven strict-valid full jobs were uploaded on
 | `codex-gpt-5.6-sol` | `f6c5c85b-41ae-4302-815a-1dc34817dc7c` | private |
 | `codex-gpt-5.6-luna` | `d5000fb4-6617-46aa-b938-f5c48a5f5496` | private |
 | `codex-gpt-5.5` | `ed1ee1c0-d1dc-4ffe-a69d-29cf9d2ec390` | private |
+| `opencode-deepseek-v4-flash` | `c4f9b472-5914-4f5c-9494-d80dd70e8478` | private |
+| `opencode-kimi-k2.6` | `c8cce8f0-5be5-4c9b-aa7d-0e20323f1637` | private |
+| `opencode-qwen3.6-35b-a3b` | `1dac5cff-f1da-4225-a6a9-e8e3ba017f40` | private |
+| `opencode-gemini-3.5-flash` | `8365292f-6ea6-4968-9215-69f8574ddbaa` | private |
+| `opencode-gemma-4-31b` | `9207e832-9f29-4366-95bf-ae699e14f0af` | private |
 | `opencode-minimax-m2.7` | `e657b921-ee6e-4e1c-9db2-fe6e37b180af` | private |
+| `claude-opus-4.8` | `c44aee94-9864-441f-abd3-5c7d81718828` | private |
+| `codex-gpt-5.6-terra` | `34d208b6-9be5-4598-8485-e28e404e4974` | private |
 
 | Agent | Model | Job(s) used | Pass rate | Cost USD | Median agent execution | Exceptions | Structured trajectories missing |
 |---|---|---|---:|---:|---:|---:|---:|
@@ -799,15 +830,490 @@ Harbor upload status: the seven strict-valid full jobs were uploaded on
 | codex | `gpt-5.6-sol` | `codex-gpt-5.6-sol` | 20/20 | 52.782459 | 16m 19s | 0 | 0 |
 | codex | `gpt-5.6-luna` | `codex-gpt-5.6-luna` | 18/20 | 12.158817 | 11m 26s | 1 | 0 |
 | codex | `gpt-5.5` | `codex-gpt-5.5` | 17/20 | 42.659779 | 6m 41s | 0 | 0 |
+| codex | `gpt-5.6-terra` | `codex-gpt-5.6-terra` | 18/20 | 13.849469 | 6m 59s | 0 | 0 |
 | opencode | `DeepSeek-V4-Flash` | `opencode-deepseek-v4-flash` | 9/20 | 1.777992 | 5m 47s | 7 | 2 |
 | opencode | `MiniMax-M2.7` | `opencode-minimax-m2.7` | 4/20 | 1.861118 | 4m 13s | 7 | 0 |
 
 DeepSeek's two missing structured trajectories are
 `engram-triton-kernel__UhQUW3u` and `gemma4-sglang-serving-opt__ywyxXn2`.
-Both still have raw OpenCode logs at `agent/opencode.txt`, and those paths are
-listed in the DeepSeek per-task table above.
+In the first sweep, both still had raw OpenCode logs at `agent/opencode.txt`;
+the local canonical job directory now points to the Round 2 retest artifacts.
 
-The original uploaded sweeps from `docs/infra-bench-test-plan.md` have been
-executed. The expanded opencode set added afterward is pending:
-`DeepSeek-V4-Flash` retest, `Kimi-K2.7-Code`, `Grok-4.3`,
-`Qwen3.6-35B-A3B`, `gemini-3.5-flash`, and `Gemma-4-31B`.
+## Round 2 Results
+
+Run date: 2026-07-18
+
+Round 2 was added after the original upload batch. This section records the
+completed round-2 smoke tests and full sweeps.
+
+### Round 2 Smoke Tests
+
+| Agent | Model | Job | Reward | Cost USD | Run log | Trajectory/log |
+|---|---|---|---:|---:|---|---|
+| opencode | `DeepSeek-V4-Flash` | `smoke-opencode-deepseek-v4-flash` | 1/1 | 0.002320 | `infra-bench/jobs/smoke-opencode-deepseek-v4-flash/run.log` | `infra-bench/jobs/smoke-opencode-deepseek-v4-flash/hello-rocm__2nMgGnT/agent/trajectory.json` |
+| opencode | `Kimi-K2.6` | `smoke-opencode-kimi-k2.6` | 1/1 | 0.013259 | `infra-bench/jobs/smoke-opencode-kimi-k2.6/run.log` | `infra-bench/jobs/smoke-opencode-kimi-k2.6/hello-rocm__KCBhCUG/agent/trajectory.json` |
+| opencode | `Qwen3.6-35B-A3B` | `smoke-opencode-qwen3.6-35b-a3b` | 1/1 | 0.006306 | `infra-bench/jobs/smoke-opencode-qwen3.6-35b-a3b/run.log` | `infra-bench/jobs/smoke-opencode-qwen3.6-35b-a3b/hello-rocm__H7VF7T5/agent/trajectory.json` |
+| opencode | `gemini-3.5-flash` | `smoke-opencode-gemini-3.5-flash` | 1/1 | 0.157678 | `infra-bench/jobs/smoke-opencode-gemini-3.5-flash/run.log` | `infra-bench/jobs/smoke-opencode-gemini-3.5-flash/hello-rocm__5cMuUPF/agent/trajectory.json` |
+| opencode | `Gemma-4-31B` | `smoke-opencode-gemma-4-31b` | 1/1 | 0.003052 | `infra-bench/jobs/smoke-opencode-gemma-4-31b/run.log` | `infra-bench/jobs/smoke-opencode-gemma-4-31b/hello-rocm__RJsvaKs/agent/trajectory.json` |
+| claude-code | `claude-opus-4.8` | `smoke-claude-opus-4.8` | 1/1 | 2.436881 | `infra-bench/jobs/smoke-claude-opus-4.8/run.log` | `infra-bench/jobs/smoke-claude-opus-4.8/hello-rocm__EzMHYco/agent/trajectory.json` |
+
+### Round 2 Aggregate Scoreboard
+
+| Agent | Model | Job | Pass rate | Cost USD | Median agent execution | Exceptions | Structured trajectories missing |
+|---|---|---|---:|---:|---:|---:|---:|
+| opencode | `DeepSeek-V4-Flash` | `opencode-deepseek-v4-flash` | 9/20 | 1.578295 | 9m 36s | 6 | 2 |
+| opencode | `Kimi-K2.6` | `opencode-kimi-k2.6` | 11/20 | 13.721151 | 5m 49s | 4 | 0 |
+| opencode | `Qwen3.6-35B-A3B` | `opencode-qwen3.6-35b-a3b` | 2/20 | 1.677487 | 50m 22s | 13 | 1 |
+| opencode | `gemini-3.5-flash` | `opencode-gemini-3.5-flash` | 14/20 | 173.511468 | 7m 2s | 5 | 0 |
+| opencode | `Gemma-4-31B` | `opencode-gemma-4-31b` | 1/20 | 0.409919 | 26m 12s | 5 | 0 |
+| claude-code | `claude-opus-4.8` | `claude-opus-4.8` | 16/20 | 69.782510 | 5m 15s | 4 | 0 |
+
+Upload metadata note: before uploading `claude-opus-4.8`, its 20 trial
+`agent_info.model_info.provider` values were normalized from `null` to
+`anthropic` so the Hub provider column matches the other Claude Code uploads.
+The pre-patch trial `result.json` files were backed up under
+`infra-bench/jobs_bk/claude-opus-4.8-provider-fix-20260719-003903/`.
+
+`MiniMax-M2.7` remains covered by the original completed OpenCode sweep
+`opencode-minimax-m2.7` above: 4/20 passed, cost `1.861118`, 20 reward files,
+and no missing structured trajectories. It was not rerun in this round because
+the round-2 OpenCode work focused on the DeepSeek retest plus the newly added
+models.
+
+OpenCode note: the completed round-2 OpenCode jobs all have 20 trial
+`result.json` files and 20 verifier reward files. Some reward-0 trials have
+only raw OpenCode logs instead of structured `agent/trajectory.json`; those
+are counted in the aggregate table and shown as `agent/opencode.txt` in the
+per-task tables below.
+
+The OpenCode runner printed a shell syntax error after some Harbor summaries
+while entering its local post-run reward-summary block. Harbor had already
+written the job `result.json` and per-trial rewards; the saved job artifacts
+are the source of truth for the tables below.
+
+### `DeepSeek-V4-Flash` via OpenCode
+
+Command:
+
+```bash
+JOB_NAME=opencode-deepseek-v4-flash MODEL=DeepSeek-V4-Flash AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' INFRA_PARALLEL=6 INFRABENCH_GPU_COUNT=8 ./run_open_code.sh
+```
+
+Result summary:
+
+```text
+Trials: 20
+Exceptions: 6
+Reward 1.0: 9
+Reward 0.0: 11
+Cost USD: 1.578295
+Median agent execution: 9m 36s
+Results written to /home/xisun/InfraBench/infra-bench/jobs/opencode-deepseek-v4-flash/result.json
+```
+
+Exception counts: `AgentTimeoutError`=5, `NonZeroAgentExitCodeError`=1.
+
+Structured trajectory missing for: `engram-triton-kernel__ZmSGKWj`,
+`gemma4-sglang-serving-opt__duCRH2M`. Raw OpenCode logs are listed in the
+table.
+
+Scoreboard: **9/20 passed**.
+
+| Task | Reward | Trial | Trajectory/log | Exception |
+|---|---:|---|---|---|
+| `cute-layout-composition` | 0 | `cute-layout-composition__FQ8ZPrn` | `infra-bench/jobs/opencode-deepseek-v4-flash/cute-layout-composition__FQ8ZPrn/agent/trajectory.json` |  |
+| `dwconv3d-occupancy` | 0 | `dwconv3d-occupancy__xAze5au` | `infra-bench/jobs/opencode-deepseek-v4-flash/dwconv3d-occupancy__xAze5au/agent/trajectory.json` |  |
+| `engram-triton-kernel` | 0 | `engram-triton-kernel__ZmSGKWj` | `infra-bench/jobs/opencode-deepseek-v4-flash/engram-triton-kernel__ZmSGKWj/agent/opencode.txt` | `AgentTimeoutError` |
+| `flydsl-cdna4-preshuffle-gemm` | 0 | `flydsl-cdna4-preshuffle-gemm__9CqjRFF` | `infra-bench/jobs/opencode-deepseek-v4-flash/flydsl-cdna4-preshuffle-gemm__9CqjRFF/agent/trajectory.json` | `AgentTimeoutError` |
+| `gemm-fp8-ptpc-quant` | 1 | `gemm-fp8-ptpc-quant__RGK2DHv` | `infra-bench/jobs/opencode-deepseek-v4-flash/gemm-fp8-ptpc-quant__RGK2DHv/agent/trajectory.json` |  |
+| `gemma4-gemm-tuning` | 0 | `gemma4-gemm-tuning__Au63iuL` | `infra-bench/jobs/opencode-deepseek-v4-flash/gemma4-gemm-tuning__Au63iuL/agent/trajectory.json` |  |
+| `gemma4-sglang-serving-opt` | 0 | `gemma4-sglang-serving-opt__duCRH2M` | `infra-bench/jobs/opencode-deepseek-v4-flash/gemma4-sglang-serving-opt__duCRH2M/agent/opencode.txt` | `AgentTimeoutError` |
+| `gluon-a8w8-mfma-att` | 1 | `gluon-a8w8-mfma-att__2PgzZRe` | `infra-bench/jobs/opencode-deepseek-v4-flash/gluon-a8w8-mfma-att__2PgzZRe/agent/trajectory.json` |  |
+| `hello-rocm` | 1 | `hello-rocm__QWn7pgy` | `infra-bench/jobs/opencode-deepseek-v4-flash/hello-rocm__QWn7pgy/agent/trajectory.json` |  |
+| `hotspot-analysis-torch-profiler` | 0 | `hotspot-analysis-torch-profiler__z9Qnh32` | `infra-bench/jobs/opencode-deepseek-v4-flash/hotspot-analysis-torch-profiler__z9Qnh32/agent/trajectory.json` | `AgentTimeoutError` |
+| `llm-fp8-quantize` | 0 | `llm-fp8-quantize__eQckvcG` | `infra-bench/jobs/opencode-deepseek-v4-flash/llm-fp8-quantize__eQckvcG/agent/trajectory.json` | `AgentTimeoutError` |
+| `llvm-simple-constant-propagation` | 1 | `llvm-simple-constant-propagation__yQJiWjX` | `infra-bench/jobs/opencode-deepseek-v4-flash/llvm-simple-constant-propagation__yQJiWjX/agent/trajectory.json` |  |
+| `mem-bandwidth-bench` | 0 | `mem-bandwidth-bench__Ca5R4kP` | `infra-bench/jobs/opencode-deepseek-v4-flash/mem-bandwidth-bench__Ca5R4kP/agent/trajectory.json` |  |
+| `paged-attention-hd256` | 0 | `paged-attention-hd256__UbYBBqh` | `infra-bench/jobs/opencode-deepseek-v4-flash/paged-attention-hd256__UbYBBqh/agent/trajectory.json` |  |
+| `pointnet2-hipify` | 1 | `pointnet2-hipify__pt6Kuk9` | `infra-bench/jobs/opencode-deepseek-v4-flash/pointnet2-hipify__pt6Kuk9/agent/trajectory.json` |  |
+| `qr-rmsnorm-fusion` | 1 | `qr-rmsnorm-fusion__MEbAZC3` | `infra-bench/jobs/opencode-deepseek-v4-flash/qr-rmsnorm-fusion__MEbAZC3/agent/trajectory.json` |  |
+| `sglang-mmmu-ipc-crash` | 1 | `sglang-mmmu-ipc-crash__35XeB4H` | `infra-bench/jobs/opencode-deepseek-v4-flash/sglang-mmmu-ipc-crash__35XeB4H/agent/trajectory.json` |  |
+| `sglang-sync-stall` | 1 | `sglang-sync-stall__vDmuEaw` | `infra-bench/jobs/opencode-deepseek-v4-flash/sglang-sync-stall__vDmuEaw/agent/trajectory.json` |  |
+| `triton-matmul-tuning` | 1 | `triton-matmul-tuning__Xhf7w3W` | `infra-bench/jobs/opencode-deepseek-v4-flash/triton-matmul-tuning__Xhf7w3W/agent/trajectory.json` |  |
+| `vllm-aiter-debug` | 0 | `vllm-aiter-debug__4NcDueG` | `infra-bench/jobs/opencode-deepseek-v4-flash/vllm-aiter-debug__4NcDueG/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+
+### `Kimi-K2.6` via OpenCode
+
+Command:
+
+```bash
+JOB_NAME=opencode-kimi-k2.6 MODEL=Kimi-K2.6 AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' INFRA_PARALLEL=6 INFRABENCH_GPU_COUNT=8 ./run_open_code.sh
+```
+
+Result summary:
+
+```text
+Trials: 20
+Exceptions: 4
+Reward 1.0: 11
+Reward 0.0: 9
+Cost USD: 13.721151
+Median agent execution: 5m 49s
+Results written to /home/xisun/InfraBench/infra-bench/jobs/opencode-kimi-k2.6/result.json
+```
+
+Exception counts: `AgentTimeoutError`=1, `ApiRateLimitError`=1,
+`NetworkConnectionError`=1, `NonZeroAgentExitCodeError`=1.
+
+Scoreboard: **11/20 passed**.
+
+| Task | Reward | Trial | Trajectory/log | Exception |
+|---|---:|---|---|---|
+| `cute-layout-composition` | 0 | `cute-layout-composition__mModf8A` | `infra-bench/jobs/opencode-kimi-k2.6/cute-layout-composition__mModf8A/agent/trajectory.json` |  |
+| `dwconv3d-occupancy` | 0 | `dwconv3d-occupancy__uHkLtPT` | `infra-bench/jobs/opencode-kimi-k2.6/dwconv3d-occupancy__uHkLtPT/agent/trajectory.json` |  |
+| `engram-triton-kernel` | 1 | `engram-triton-kernel__qCiCDxd` | `infra-bench/jobs/opencode-kimi-k2.6/engram-triton-kernel__qCiCDxd/agent/trajectory.json` |  |
+| `flydsl-cdna4-preshuffle-gemm` | 0 | `flydsl-cdna4-preshuffle-gemm__WyV8v3d` | `infra-bench/jobs/opencode-kimi-k2.6/flydsl-cdna4-preshuffle-gemm__WyV8v3d/agent/trajectory.json` |  |
+| `gemm-fp8-ptpc-quant` | 0 | `gemm-fp8-ptpc-quant__FxmAY9K` | `infra-bench/jobs/opencode-kimi-k2.6/gemm-fp8-ptpc-quant__FxmAY9K/agent/trajectory.json` |  |
+| `gemma4-gemm-tuning` | 0 | `gemma4-gemm-tuning__JTbdkii` | `infra-bench/jobs/opencode-kimi-k2.6/gemma4-gemm-tuning__JTbdkii/agent/trajectory.json` |  |
+| `gemma4-sglang-serving-opt` | 0 | `gemma4-sglang-serving-opt__kQgYJuU` | `infra-bench/jobs/opencode-kimi-k2.6/gemma4-sglang-serving-opt__kQgYJuU/agent/trajectory.json` | `AgentTimeoutError` |
+| `gluon-a8w8-mfma-att` | 1 | `gluon-a8w8-mfma-att__GTNJKMU` | `infra-bench/jobs/opencode-kimi-k2.6/gluon-a8w8-mfma-att__GTNJKMU/agent/trajectory.json` |  |
+| `hello-rocm` | 1 | `hello-rocm__5RiboUn` | `infra-bench/jobs/opencode-kimi-k2.6/hello-rocm__5RiboUn/agent/trajectory.json` |  |
+| `hotspot-analysis-torch-profiler` | 1 | `hotspot-analysis-torch-profiler__NLF2bBA` | `infra-bench/jobs/opencode-kimi-k2.6/hotspot-analysis-torch-profiler__NLF2bBA/agent/trajectory.json` | `ApiRateLimitError` |
+| `llm-fp8-quantize` | 1 | `llm-fp8-quantize__yVTX8NA` | `infra-bench/jobs/opencode-kimi-k2.6/llm-fp8-quantize__yVTX8NA/agent/trajectory.json` | `NetworkConnectionError` |
+| `llvm-simple-constant-propagation` | 1 | `llvm-simple-constant-propagation__gosKKBG` | `infra-bench/jobs/opencode-kimi-k2.6/llvm-simple-constant-propagation__gosKKBG/agent/trajectory.json` |  |
+| `mem-bandwidth-bench` | 1 | `mem-bandwidth-bench__a9v3GRF` | `infra-bench/jobs/opencode-kimi-k2.6/mem-bandwidth-bench__a9v3GRF/agent/trajectory.json` |  |
+| `paged-attention-hd256` | 0 | `paged-attention-hd256__CY4X7wW` | `infra-bench/jobs/opencode-kimi-k2.6/paged-attention-hd256__CY4X7wW/agent/trajectory.json` |  |
+| `pointnet2-hipify` | 1 | `pointnet2-hipify__GxVtDJB` | `infra-bench/jobs/opencode-kimi-k2.6/pointnet2-hipify__GxVtDJB/agent/trajectory.json` |  |
+| `qr-rmsnorm-fusion` | 1 | `qr-rmsnorm-fusion__thE269j` | `infra-bench/jobs/opencode-kimi-k2.6/qr-rmsnorm-fusion__thE269j/agent/trajectory.json` |  |
+| `sglang-mmmu-ipc-crash` | 1 | `sglang-mmmu-ipc-crash__RD3xwsW` | `infra-bench/jobs/opencode-kimi-k2.6/sglang-mmmu-ipc-crash__RD3xwsW/agent/trajectory.json` |  |
+| `sglang-sync-stall` | 0 | `sglang-sync-stall__zx3BRvZ` | `infra-bench/jobs/opencode-kimi-k2.6/sglang-sync-stall__zx3BRvZ/agent/trajectory.json` |  |
+| `triton-matmul-tuning` | 1 | `triton-matmul-tuning__kF75Le2` | `infra-bench/jobs/opencode-kimi-k2.6/triton-matmul-tuning__kF75Le2/agent/trajectory.json` |  |
+| `vllm-aiter-debug` | 0 | `vllm-aiter-debug__EX7Xzvy` | `infra-bench/jobs/opencode-kimi-k2.6/vllm-aiter-debug__EX7Xzvy/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+
+### `Qwen3.6-35B-A3B` via OpenCode
+
+Command:
+
+```bash
+JOB_NAME=opencode-qwen3.6-35b-a3b MODEL=Qwen3.6-35B-A3B AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' INFRA_PARALLEL=6 INFRABENCH_GPU_COUNT=8 ./run_open_code.sh
+```
+
+Result summary:
+
+```text
+Trials: 20
+Exceptions: 13
+Reward 1.0: 2
+Reward 0.0: 18
+Cost USD: 1.677487
+Median agent execution: 50m 22s
+Results written to /home/xisun/InfraBench/infra-bench/jobs/opencode-qwen3.6-35b-a3b/result.json
+```
+
+Exception counts: `AgentTimeoutError`=10, `NonZeroAgentExitCodeError`=3.
+
+Structured trajectory missing for: `engram-triton-kernel__eRvwvXG`. Raw
+OpenCode logs are listed in the table.
+
+Merged result note: the sweep `hello-rocm__98hbAYb` trial timed out despite the
+Qwen smoke test passing. The upload candidate replaces that failed sweep trial
+with the passing smoke trial `hello-rocm__H7VF7T5` from
+`smoke-opencode-qwen3.6-35b-a3b`. The original failed sweep trial is backed up
+under
+`infra-bench/jobs_bk/opencode-qwen3.6-35b-a3b-hello-rocm-replaced-20260719-000713/`.
+
+Scoreboard: **2/20 passed**.
+
+| Task | Reward | Trial | Trajectory/log | Exception |
+|---|---:|---|---|---|
+| `cute-layout-composition` | 0 | `cute-layout-composition__csEjXnd` | `infra-bench/jobs/opencode-qwen3.6-35b-a3b/cute-layout-composition__csEjXnd/agent/trajectory.json` | `AgentTimeoutError` |
+| `dwconv3d-occupancy` | 0 | `dwconv3d-occupancy__4taoAYo` | `infra-bench/jobs/opencode-qwen3.6-35b-a3b/dwconv3d-occupancy__4taoAYo/agent/trajectory.json` | `AgentTimeoutError` |
+| `engram-triton-kernel` | 0 | `engram-triton-kernel__eRvwvXG` | `infra-bench/jobs/opencode-qwen3.6-35b-a3b/engram-triton-kernel__eRvwvXG/agent/opencode.txt` | `AgentTimeoutError` |
+| `flydsl-cdna4-preshuffle-gemm` | 0 | `flydsl-cdna4-preshuffle-gemm__8F3uSjr` | `infra-bench/jobs/opencode-qwen3.6-35b-a3b/flydsl-cdna4-preshuffle-gemm__8F3uSjr/agent/trajectory.json` | `AgentTimeoutError` |
+| `gemm-fp8-ptpc-quant` | 0 | `gemm-fp8-ptpc-quant__iBtabpp` | `infra-bench/jobs/opencode-qwen3.6-35b-a3b/gemm-fp8-ptpc-quant__iBtabpp/agent/trajectory.json` |  |
+| `gemma4-gemm-tuning` | 0 | `gemma4-gemm-tuning__mDm2ErA` | `infra-bench/jobs/opencode-qwen3.6-35b-a3b/gemma4-gemm-tuning__mDm2ErA/agent/trajectory.json` |  |
+| `gemma4-sglang-serving-opt` | 0 | `gemma4-sglang-serving-opt__th42WAz` | `infra-bench/jobs/opencode-qwen3.6-35b-a3b/gemma4-sglang-serving-opt__th42WAz/agent/trajectory.json` | `AgentTimeoutError` |
+| `gluon-a8w8-mfma-att` | 0 | `gluon-a8w8-mfma-att__HatYJXB` | `infra-bench/jobs/opencode-qwen3.6-35b-a3b/gluon-a8w8-mfma-att__HatYJXB/agent/trajectory.json` | `AgentTimeoutError` |
+| `hello-rocm` | 1 | `hello-rocm__H7VF7T5` | `infra-bench/jobs/opencode-qwen3.6-35b-a3b/hello-rocm__H7VF7T5/agent/trajectory.json` |  |
+| `hotspot-analysis-torch-profiler` | 0 | `hotspot-analysis-torch-profiler__Y5LjoiQ` | `infra-bench/jobs/opencode-qwen3.6-35b-a3b/hotspot-analysis-torch-profiler__Y5LjoiQ/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+| `llm-fp8-quantize` | 0 | `llm-fp8-quantize__X4BHBiU` | `infra-bench/jobs/opencode-qwen3.6-35b-a3b/llm-fp8-quantize__X4BHBiU/agent/trajectory.json` | `AgentTimeoutError` |
+| `llvm-simple-constant-propagation` | 0 | `llvm-simple-constant-propagation__DnkhHSe` | `infra-bench/jobs/opencode-qwen3.6-35b-a3b/llvm-simple-constant-propagation__DnkhHSe/agent/trajectory.json` | `AgentTimeoutError` |
+| `mem-bandwidth-bench` | 0 | `mem-bandwidth-bench__tiDXADg` | `infra-bench/jobs/opencode-qwen3.6-35b-a3b/mem-bandwidth-bench__tiDXADg/agent/trajectory.json` |  |
+| `paged-attention-hd256` | 0 | `paged-attention-hd256__yx3yMDi` | `infra-bench/jobs/opencode-qwen3.6-35b-a3b/paged-attention-hd256__yx3yMDi/agent/trajectory.json` |  |
+| `pointnet2-hipify` | 1 | `pointnet2-hipify__B8xzj7A` | `infra-bench/jobs/opencode-qwen3.6-35b-a3b/pointnet2-hipify__B8xzj7A/agent/trajectory.json` | `AgentTimeoutError` |
+| `qr-rmsnorm-fusion` | 0 | `qr-rmsnorm-fusion__RPPqLz6` | `infra-bench/jobs/opencode-qwen3.6-35b-a3b/qr-rmsnorm-fusion__RPPqLz6/agent/trajectory.json` |  |
+| `sglang-mmmu-ipc-crash` | 0 | `sglang-mmmu-ipc-crash__iB9KjrM` | `infra-bench/jobs/opencode-qwen3.6-35b-a3b/sglang-mmmu-ipc-crash__iB9KjrM/agent/trajectory.json` | `AgentTimeoutError` |
+| `sglang-sync-stall` | 0 | `sglang-sync-stall__HbN7fC6` | `infra-bench/jobs/opencode-qwen3.6-35b-a3b/sglang-sync-stall__HbN7fC6/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+| `triton-matmul-tuning` | 0 | `triton-matmul-tuning__uWXc5qM` | `infra-bench/jobs/opencode-qwen3.6-35b-a3b/triton-matmul-tuning__uWXc5qM/agent/trajectory.json` |  |
+| `vllm-aiter-debug` | 0 | `vllm-aiter-debug__mNnVwwT` | `infra-bench/jobs/opencode-qwen3.6-35b-a3b/vllm-aiter-debug__mNnVwwT/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+
+### `gemini-3.5-flash` via OpenCode
+
+Command:
+
+```bash
+JOB_NAME=opencode-gemini-3.5-flash MODEL=gemini-3.5-flash AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' INFRA_PARALLEL=6 INFRABENCH_GPU_COUNT=8 ./run_open_code.sh
+```
+
+Result summary:
+
+```text
+Trials: 20
+Exceptions: 5
+Reward 1.0: 14
+Reward 0.0: 6
+Cost USD: 173.511468
+Median agent execution: 7m 2s
+Results written to /home/xisun/InfraBench/infra-bench/jobs/opencode-gemini-3.5-flash/result.json
+```
+
+Exception counts: `AgentTimeoutError`=1, `ApiRateLimitError`=2,
+`NonZeroAgentExitCodeError`=2.
+
+Scoreboard: **14/20 passed**.
+
+| Task | Reward | Trial | Trajectory/log | Exception |
+|---|---:|---|---|---|
+| `cute-layout-composition` | 0 | `cute-layout-composition__8kJpL3H` | `infra-bench/jobs/opencode-gemini-3.5-flash/cute-layout-composition__8kJpL3H/agent/trajectory.json` |  |
+| `dwconv3d-occupancy` | 1 | `dwconv3d-occupancy__R4NEAxH` | `infra-bench/jobs/opencode-gemini-3.5-flash/dwconv3d-occupancy__R4NEAxH/agent/trajectory.json` |  |
+| `engram-triton-kernel` | 1 | `engram-triton-kernel__UJ6B4ej` | `infra-bench/jobs/opencode-gemini-3.5-flash/engram-triton-kernel__UJ6B4ej/agent/trajectory.json` |  |
+| `flydsl-cdna4-preshuffle-gemm` | 1 | `flydsl-cdna4-preshuffle-gemm__AkiY2xT` | `infra-bench/jobs/opencode-gemini-3.5-flash/flydsl-cdna4-preshuffle-gemm__AkiY2xT/agent/trajectory.json` |  |
+| `gemm-fp8-ptpc-quant` | 1 | `gemm-fp8-ptpc-quant__YwZAmY2` | `infra-bench/jobs/opencode-gemini-3.5-flash/gemm-fp8-ptpc-quant__YwZAmY2/agent/trajectory.json` |  |
+| `gemma4-gemm-tuning` | 1 | `gemma4-gemm-tuning__4aXMtW8` | `infra-bench/jobs/opencode-gemini-3.5-flash/gemma4-gemm-tuning__4aXMtW8/agent/trajectory.json` |  |
+| `gemma4-sglang-serving-opt` | 0 | `gemma4-sglang-serving-opt__F4SaJik` | `infra-bench/jobs/opencode-gemini-3.5-flash/gemma4-sglang-serving-opt__F4SaJik/agent/trajectory.json` | `AgentTimeoutError` |
+| `gluon-a8w8-mfma-att` | 1 | `gluon-a8w8-mfma-att__KxNWYWZ` | `infra-bench/jobs/opencode-gemini-3.5-flash/gluon-a8w8-mfma-att__KxNWYWZ/agent/trajectory.json` |  |
+| `hello-rocm` | 1 | `hello-rocm__VJDwXXF` | `infra-bench/jobs/opencode-gemini-3.5-flash/hello-rocm__VJDwXXF/agent/trajectory.json` |  |
+| `hotspot-analysis-torch-profiler` | 1 | `hotspot-analysis-torch-profiler__QDB7ASb` | `infra-bench/jobs/opencode-gemini-3.5-flash/hotspot-analysis-torch-profiler__QDB7ASb/agent/trajectory.json` | `ApiRateLimitError` |
+| `llm-fp8-quantize` | 1 | `llm-fp8-quantize__bmUPqtH` | `infra-bench/jobs/opencode-gemini-3.5-flash/llm-fp8-quantize__bmUPqtH/agent/trajectory.json` | `ApiRateLimitError` |
+| `llvm-simple-constant-propagation` | 0 | `llvm-simple-constant-propagation__vm56NAK` | `infra-bench/jobs/opencode-gemini-3.5-flash/llvm-simple-constant-propagation__vm56NAK/agent/trajectory.json` |  |
+| `mem-bandwidth-bench` | 1 | `mem-bandwidth-bench__JR58crW` | `infra-bench/jobs/opencode-gemini-3.5-flash/mem-bandwidth-bench__JR58crW/agent/trajectory.json` |  |
+| `paged-attention-hd256` | 1 | `paged-attention-hd256__KvRdrw8` | `infra-bench/jobs/opencode-gemini-3.5-flash/paged-attention-hd256__KvRdrw8/agent/trajectory.json` |  |
+| `pointnet2-hipify` | 1 | `pointnet2-hipify__5ai6Xao` | `infra-bench/jobs/opencode-gemini-3.5-flash/pointnet2-hipify__5ai6Xao/agent/trajectory.json` |  |
+| `qr-rmsnorm-fusion` | 1 | `qr-rmsnorm-fusion__snsRBfh` | `infra-bench/jobs/opencode-gemini-3.5-flash/qr-rmsnorm-fusion__snsRBfh/agent/trajectory.json` |  |
+| `sglang-mmmu-ipc-crash` | 0 | `sglang-mmmu-ipc-crash__aZ5eLik` | `infra-bench/jobs/opencode-gemini-3.5-flash/sglang-mmmu-ipc-crash__aZ5eLik/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+| `sglang-sync-stall` | 0 | `sglang-sync-stall__Y4NJJke` | `infra-bench/jobs/opencode-gemini-3.5-flash/sglang-sync-stall__Y4NJJke/agent/trajectory.json` |  |
+| `triton-matmul-tuning` | 1 | `triton-matmul-tuning__3BFJHEJ` | `infra-bench/jobs/opencode-gemini-3.5-flash/triton-matmul-tuning__3BFJHEJ/agent/trajectory.json` |  |
+| `vllm-aiter-debug` | 0 | `vllm-aiter-debug__qmeHA6r` | `infra-bench/jobs/opencode-gemini-3.5-flash/vllm-aiter-debug__qmeHA6r/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+
+### `Gemma-4-31B` via OpenCode
+
+Command:
+
+```bash
+JOB_NAME=opencode-gemma-4-31b MODEL=Gemma-4-31B AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' INFRA_PARALLEL=6 INFRABENCH_GPU_COUNT=8 ./run_open_code.sh
+```
+
+Result summary:
+
+```text
+Trials: 20
+Exceptions: 5
+Reward 1.0: 1
+Reward 0.0: 19
+Cost USD: 0.409919
+Median agent execution: 26m 12s
+Results written to /home/xisun/InfraBench/infra-bench/jobs/opencode-gemma-4-31b/result.json
+```
+
+Exception counts: `AgentTimeoutError`=3, `NonZeroAgentExitCodeError`=2.
+
+Merged result note: the sweep `hello-rocm__Rc3edLD` trial timed out despite the
+Gemma smoke test passing. The upload candidate replaces that failed sweep trial
+with the passing smoke trial `hello-rocm__RJsvaKs` from
+`smoke-opencode-gemma-4-31b`. The original failed sweep trial is backed up under
+`infra-bench/jobs_bk/opencode-gemma-4-31b-hello-rocm-replaced-20260719-000312/`.
+
+Scoreboard: **1/20 passed**.
+
+| Task | Reward | Trial | Trajectory/log | Exception |
+|---|---:|---|---|---|
+| `cute-layout-composition` | 0 | `cute-layout-composition__DwWB8T7` | `infra-bench/jobs/opencode-gemma-4-31b/cute-layout-composition__DwWB8T7/agent/trajectory.json` | `AgentTimeoutError` |
+| `dwconv3d-occupancy` | 0 | `dwconv3d-occupancy__SppsrPk` | `infra-bench/jobs/opencode-gemma-4-31b/dwconv3d-occupancy__SppsrPk/agent/trajectory.json` |  |
+| `engram-triton-kernel` | 0 | `engram-triton-kernel__ksXbsFx` | `infra-bench/jobs/opencode-gemma-4-31b/engram-triton-kernel__ksXbsFx/agent/trajectory.json` |  |
+| `flydsl-cdna4-preshuffle-gemm` | 0 | `flydsl-cdna4-preshuffle-gemm__QaLVEuc` | `infra-bench/jobs/opencode-gemma-4-31b/flydsl-cdna4-preshuffle-gemm__QaLVEuc/agent/trajectory.json` |  |
+| `gemm-fp8-ptpc-quant` | 0 | `gemm-fp8-ptpc-quant__2SF5PzE` | `infra-bench/jobs/opencode-gemma-4-31b/gemm-fp8-ptpc-quant__2SF5PzE/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+| `gemma4-gemm-tuning` | 0 | `gemma4-gemm-tuning__6pfECc6` | `infra-bench/jobs/opencode-gemma-4-31b/gemma4-gemm-tuning__6pfECc6/agent/trajectory.json` |  |
+| `gemma4-sglang-serving-opt` | 0 | `gemma4-sglang-serving-opt__HVfhPb9` | `infra-bench/jobs/opencode-gemma-4-31b/gemma4-sglang-serving-opt__HVfhPb9/agent/trajectory.json` |  |
+| `gluon-a8w8-mfma-att` | 0 | `gluon-a8w8-mfma-att__Wp5WWmC` | `infra-bench/jobs/opencode-gemma-4-31b/gluon-a8w8-mfma-att__Wp5WWmC/agent/trajectory.json` | `AgentTimeoutError` |
+| `hello-rocm` | 1 | `hello-rocm__RJsvaKs` | `infra-bench/jobs/opencode-gemma-4-31b/hello-rocm__RJsvaKs/agent/trajectory.json` |  |
+| `hotspot-analysis-torch-profiler` | 0 | `hotspot-analysis-torch-profiler__JYxfUrs` | `infra-bench/jobs/opencode-gemma-4-31b/hotspot-analysis-torch-profiler__JYxfUrs/agent/trajectory.json` |  |
+| `llm-fp8-quantize` | 0 | `llm-fp8-quantize__NfRVLBA` | `infra-bench/jobs/opencode-gemma-4-31b/llm-fp8-quantize__NfRVLBA/agent/trajectory.json` |  |
+| `llvm-simple-constant-propagation` | 0 | `llvm-simple-constant-propagation__DZhk8GB` | `infra-bench/jobs/opencode-gemma-4-31b/llvm-simple-constant-propagation__DZhk8GB/agent/trajectory.json` | `AgentTimeoutError` |
+| `mem-bandwidth-bench` | 0 | `mem-bandwidth-bench__iFiV9gD` | `infra-bench/jobs/opencode-gemma-4-31b/mem-bandwidth-bench__iFiV9gD/agent/trajectory.json` |  |
+| `paged-attention-hd256` | 0 | `paged-attention-hd256__rrVeeQs` | `infra-bench/jobs/opencode-gemma-4-31b/paged-attention-hd256__rrVeeQs/agent/trajectory.json` |  |
+| `pointnet2-hipify` | 0 | `pointnet2-hipify__zagsKW3` | `infra-bench/jobs/opencode-gemma-4-31b/pointnet2-hipify__zagsKW3/agent/trajectory.json` |  |
+| `qr-rmsnorm-fusion` | 0 | `qr-rmsnorm-fusion__SjxwDzL` | `infra-bench/jobs/opencode-gemma-4-31b/qr-rmsnorm-fusion__SjxwDzL/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+| `sglang-mmmu-ipc-crash` | 0 | `sglang-mmmu-ipc-crash__fmHwY95` | `infra-bench/jobs/opencode-gemma-4-31b/sglang-mmmu-ipc-crash__fmHwY95/agent/trajectory.json` |  |
+| `sglang-sync-stall` | 0 | `sglang-sync-stall__AkGAV6q` | `infra-bench/jobs/opencode-gemma-4-31b/sglang-sync-stall__AkGAV6q/agent/trajectory.json` |  |
+| `triton-matmul-tuning` | 0 | `triton-matmul-tuning__E2tNGCe` | `infra-bench/jobs/opencode-gemma-4-31b/triton-matmul-tuning__E2tNGCe/agent/trajectory.json` |  |
+| `vllm-aiter-debug` | 0 | `vllm-aiter-debug__VswMsDN` | `infra-bench/jobs/opencode-gemma-4-31b/vllm-aiter-debug__VswMsDN/agent/trajectory.json` |  |
+
+### `claude-opus-4.8` via Claude Code
+
+Smoke command:
+
+```bash
+JOB_NAME=smoke-claude-opus-4.8 MODEL=claude-opus-4.8 ./run_claude_code.sh -i hello-rocm
+```
+
+Smoke result: **1/1 passed**; cost `2.436881` USD; trajectory
+`infra-bench/jobs/smoke-claude-opus-4.8/hello-rocm__EzMHYco/agent/trajectory.json`.
+
+Full command:
+
+```bash
+JOB_NAME=claude-opus-4.8 MODEL=claude-opus-4.8 INFRA_PARALLEL=6 INFRABENCH_GPU_COUNT=8 ./run_claude_code.sh
+```
+
+Result summary:
+
+```text
+Trials: 20
+Exceptions: 4
+Reward 1.0: 16
+Reward 0.0: 4
+Cost USD: 69.782510
+Median agent execution: 5m 15s
+Results written to /home/xisun/InfraBench/infra-bench/jobs/claude-opus-4.8/result.json
+```
+
+Exception counts: `NonZeroAgentExitCodeError`=2, `AgentTimeoutError`=1,
+`UnknownApiError`=1.
+
+All 20 trials have structured `agent/trajectory.json` files. Note that Harbor
+counts agent exceptions independently from verifier rewards; for example,
+`llm-fp8-quantize__qaVH9ZU` hit the 5400-second agent timeout but still received
+reward 1 after the verifier ran against the produced `/app/fp8_model` artifact.
+
+Scoreboard: **16/20 passed**.
+
+| Task | Reward | Trial | Trajectory/log | Exception |
+|---|---:|---|---|---|
+| `cute-layout-composition` | 0 | `cute-layout-composition__VQJZjPF` | `infra-bench/jobs/claude-opus-4.8/cute-layout-composition__VQJZjPF/agent/trajectory.json` |  |
+| `dwconv3d-occupancy` | 1 | `dwconv3d-occupancy__Ntoa7pA` | `infra-bench/jobs/claude-opus-4.8/dwconv3d-occupancy__Ntoa7pA/agent/trajectory.json` |  |
+| `engram-triton-kernel` | 1 | `engram-triton-kernel__PjzN7Lm` | `infra-bench/jobs/claude-opus-4.8/engram-triton-kernel__PjzN7Lm/agent/trajectory.json` |  |
+| `flydsl-cdna4-preshuffle-gemm` | 1 | `flydsl-cdna4-preshuffle-gemm__vb5zUvX` | `infra-bench/jobs/claude-opus-4.8/flydsl-cdna4-preshuffle-gemm__vb5zUvX/agent/trajectory.json` |  |
+| `gemm-fp8-ptpc-quant` | 1 | `gemm-fp8-ptpc-quant__paKWs88` | `infra-bench/jobs/claude-opus-4.8/gemm-fp8-ptpc-quant__paKWs88/agent/trajectory.json` |  |
+| `gemma4-gemm-tuning` | 0 | `gemma4-gemm-tuning__5bswW4p` | `infra-bench/jobs/claude-opus-4.8/gemma4-gemm-tuning__5bswW4p/agent/trajectory.json` |  |
+| `gemma4-sglang-serving-opt` | 0 | `gemma4-sglang-serving-opt__HBZYom2` | `infra-bench/jobs/claude-opus-4.8/gemma4-sglang-serving-opt__HBZYom2/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+| `gluon-a8w8-mfma-att` | 1 | `gluon-a8w8-mfma-att__8YKEQe4` | `infra-bench/jobs/claude-opus-4.8/gluon-a8w8-mfma-att__8YKEQe4/agent/trajectory.json` |  |
+| `hello-rocm` | 1 | `hello-rocm__7E86tMm` | `infra-bench/jobs/claude-opus-4.8/hello-rocm__7E86tMm/agent/trajectory.json` |  |
+| `hotspot-analysis-torch-profiler` | 1 | `hotspot-analysis-torch-profiler__GiEGsG4` | `infra-bench/jobs/claude-opus-4.8/hotspot-analysis-torch-profiler__GiEGsG4/agent/trajectory.json` |  |
+| `llm-fp8-quantize` | 1 | `llm-fp8-quantize__qaVH9ZU` | `infra-bench/jobs/claude-opus-4.8/llm-fp8-quantize__qaVH9ZU/agent/trajectory.json` | `AgentTimeoutError` |
+| `llvm-simple-constant-propagation` | 1 | `llvm-simple-constant-propagation__BhYdKvv` | `infra-bench/jobs/claude-opus-4.8/llvm-simple-constant-propagation__BhYdKvv/agent/trajectory.json` |  |
+| `mem-bandwidth-bench` | 1 | `mem-bandwidth-bench__TzU8UAc` | `infra-bench/jobs/claude-opus-4.8/mem-bandwidth-bench__TzU8UAc/agent/trajectory.json` |  |
+| `paged-attention-hd256` | 0 | `paged-attention-hd256__zMGZZXY` | `infra-bench/jobs/claude-opus-4.8/paged-attention-hd256__zMGZZXY/agent/trajectory.json` | `UnknownApiError` |
+| `pointnet2-hipify` | 1 | `pointnet2-hipify__xcTG35X` | `infra-bench/jobs/claude-opus-4.8/pointnet2-hipify__xcTG35X/agent/trajectory.json` |  |
+| `qr-rmsnorm-fusion` | 1 | `qr-rmsnorm-fusion__iXeQ3xz` | `infra-bench/jobs/claude-opus-4.8/qr-rmsnorm-fusion__iXeQ3xz/agent/trajectory.json` |  |
+| `sglang-mmmu-ipc-crash` | 1 | `sglang-mmmu-ipc-crash__gYS9mgu` | `infra-bench/jobs/claude-opus-4.8/sglang-mmmu-ipc-crash__gYS9mgu/agent/trajectory.json` |  |
+| `sglang-sync-stall` | 1 | `sglang-sync-stall__aPhK7mY` | `infra-bench/jobs/claude-opus-4.8/sglang-sync-stall__aPhK7mY/agent/trajectory.json` |  |
+| `triton-matmul-tuning` | 1 | `triton-matmul-tuning__ALSXqwS` | `infra-bench/jobs/claude-opus-4.8/triton-matmul-tuning__ALSXqwS/agent/trajectory.json` |  |
+| `vllm-aiter-debug` | 1 | `vllm-aiter-debug__jbg2Tsx` | `infra-bench/jobs/claude-opus-4.8/vllm-aiter-debug__jbg2Tsx/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+
+### Round 2 Exclusions
+
+`Kimi-K2.7-Code` was removed from the active test plan on 2026-07-18 because
+its `hello-rocm` smoke test routed successfully but produced unusable output and
+failed to write `/app/gpu_report.json`. It was replaced by `Kimi-K2.6`, whose
+smoke passed and whose full sweep is recorded above.
+
+`Grok-4.3` was removed from the active test plan on 2026-07-18. The dashboard
+showed the model as operational, but smoke tests against the configured AMD
+Unified gateway route failed before agent execution: Chat Completions returned
+`Deployment of "Grok-4.3" for "ChatCompletions" is not found`, and the Responses
+adapter returned `Deployment of "Grok-4.3" for "Responses" is not found`.
+
+## Round 3 Results
+
+Run date: 2026-07-19
+
+Round 3 adds `gpt-5.6-terra` through the Codex runner. The smoke and full-sweep
+jobs are saved under `infra-bench/jobs/`.
+
+### Round 3 Smoke Tests
+
+| Agent | Model | Job | Reward | Cost USD | Run log | Trajectory/log |
+|---|---|---|---:|---:|---|---|
+| codex | `gpt-5.6-terra` | `smoke-codex-gpt-5.6-terra` | 1/1 | 0.032377 | `infra-bench/jobs/smoke-codex-gpt-5.6-terra/run.log` | `infra-bench/jobs/smoke-codex-gpt-5.6-terra/hello-rocm__harvpHh/agent/trajectory.json` |
+
+### Round 3 Aggregate Scoreboard
+
+| Agent | Model | Job | Pass rate | Cost USD | Median agent execution | Exceptions | Structured trajectories missing |
+|---|---|---|---:|---:|---:|---:|---:|
+| codex | `gpt-5.6-terra` | `codex-gpt-5.6-terra` | 18/20 | 13.849469 | 6m 59s | 0 | 0 |
+
+Metadata note: before recording the job as upload-ready, the Terra smoke and
+full-sweep job `config.json`, `lock.json`, and nested trial `result.json`
+agent names were normalized from `agents.amd_codex:AmdCodex` to `codex`, matching
+the prior Codex upload directories. The pre-patch artifacts were backed up under
+`infra-bench/jobs_bk/codex-gpt-5.6-terra-agent-name-fix-20260719-015503/`.
+
+### `gpt-5.6-terra` via Codex
+
+Smoke command:
+
+```bash
+JOB_NAME=smoke-codex-gpt-5.6-terra MODEL=gpt-5.6-terra ./run_codex.sh -i hello-rocm
+```
+
+Smoke result: **1/1 passed**; cost `0.032377` USD; trajectory
+`infra-bench/jobs/smoke-codex-gpt-5.6-terra/hello-rocm__harvpHh/agent/trajectory.json`.
+
+Full command:
+
+```bash
+JOB_NAME=codex-gpt-5.6-terra MODEL=gpt-5.6-terra INFRA_PARALLEL=6 INFRABENCH_GPU_COUNT=8 ./run_codex.sh
+```
+
+Result summary:
+
+```text
+Trials: 20
+Exceptions: 0
+Reward 1.0: 18
+Reward 0.0: 2
+Cost USD: 13.849469
+Median agent execution: 6m 59s
+Input tokens: 27675788
+Cache tokens: 26089216
+Output tokens: 224049
+Results written to /home/xisun/InfraBench/infra-bench/jobs/codex-gpt-5.6-terra/result.json
+Run log: /home/xisun/InfraBench/infra-bench/jobs/codex-gpt-5.6-terra/run.log
+```
+
+Failure notes:
+
+- `gemma4-sglang-serving-opt__SvitwCt` reached the verifier, but the agent
+  server was not healthy. The verifier reported `server_not_healthy` after an
+  `UnboundLocalError: local variable 'shuffle_weight' referenced before
+  assignment`.
+- `paged-attention-hd256__zQbKkJ4` reached the verifier and failed correctness:
+  `correct_kv257`, `correct_kv2048`, and `perf_shape_correct`.
+
+All 20 trials have structured `agent/trajectory.json` files. Harbor reported no
+agent exceptions for this sweep.
+
+Scoreboard: **18/20 passed**.
+
+| Task | Reward | Trial | Trajectory/log | Exception |
+|---|---:|---|---|---|
+| `cute-layout-composition` | 1 | `cute-layout-composition__KSmw3C8` | `infra-bench/jobs/codex-gpt-5.6-terra/cute-layout-composition__KSmw3C8/agent/trajectory.json` |  |
+| `dwconv3d-occupancy` | 1 | `dwconv3d-occupancy__niv8Ubv` | `infra-bench/jobs/codex-gpt-5.6-terra/dwconv3d-occupancy__niv8Ubv/agent/trajectory.json` |  |
+| `engram-triton-kernel` | 1 | `engram-triton-kernel__HR3yugo` | `infra-bench/jobs/codex-gpt-5.6-terra/engram-triton-kernel__HR3yugo/agent/trajectory.json` |  |
+| `flydsl-cdna4-preshuffle-gemm` | 1 | `flydsl-cdna4-preshuffle-gemm__hKAfqKq` | `infra-bench/jobs/codex-gpt-5.6-terra/flydsl-cdna4-preshuffle-gemm__hKAfqKq/agent/trajectory.json` |  |
+| `gemm-fp8-ptpc-quant` | 1 | `gemm-fp8-ptpc-quant__BQDmF48` | `infra-bench/jobs/codex-gpt-5.6-terra/gemm-fp8-ptpc-quant__BQDmF48/agent/trajectory.json` |  |
+| `gemma4-gemm-tuning` | 1 | `gemma4-gemm-tuning__7jyLgbX` | `infra-bench/jobs/codex-gpt-5.6-terra/gemma4-gemm-tuning__7jyLgbX/agent/trajectory.json` |  |
+| `gemma4-sglang-serving-opt` | 0 | `gemma4-sglang-serving-opt__SvitwCt` | `infra-bench/jobs/codex-gpt-5.6-terra/gemma4-sglang-serving-opt__SvitwCt/agent/trajectory.json` |  |
+| `gluon-a8w8-mfma-att` | 1 | `gluon-a8w8-mfma-att__ss5Dt8L` | `infra-bench/jobs/codex-gpt-5.6-terra/gluon-a8w8-mfma-att__ss5Dt8L/agent/trajectory.json` |  |
+| `hello-rocm` | 1 | `hello-rocm__wsSDFxX` | `infra-bench/jobs/codex-gpt-5.6-terra/hello-rocm__wsSDFxX/agent/trajectory.json` |  |
+| `hotspot-analysis-torch-profiler` | 1 | `hotspot-analysis-torch-profiler__EXDhTj2` | `infra-bench/jobs/codex-gpt-5.6-terra/hotspot-analysis-torch-profiler__EXDhTj2/agent/trajectory.json` |  |
+| `llm-fp8-quantize` | 1 | `llm-fp8-quantize__o74Xm39` | `infra-bench/jobs/codex-gpt-5.6-terra/llm-fp8-quantize__o74Xm39/agent/trajectory.json` |  |
+| `llvm-simple-constant-propagation` | 1 | `llvm-simple-constant-propagation__Kk7jKHq` | `infra-bench/jobs/codex-gpt-5.6-terra/llvm-simple-constant-propagation__Kk7jKHq/agent/trajectory.json` |  |
+| `mem-bandwidth-bench` | 1 | `mem-bandwidth-bench__mT9vTKs` | `infra-bench/jobs/codex-gpt-5.6-terra/mem-bandwidth-bench__mT9vTKs/agent/trajectory.json` |  |
+| `paged-attention-hd256` | 0 | `paged-attention-hd256__zQbKkJ4` | `infra-bench/jobs/codex-gpt-5.6-terra/paged-attention-hd256__zQbKkJ4/agent/trajectory.json` |  |
+| `pointnet2-hipify` | 1 | `pointnet2-hipify__6RBopvb` | `infra-bench/jobs/codex-gpt-5.6-terra/pointnet2-hipify__6RBopvb/agent/trajectory.json` |  |
+| `qr-rmsnorm-fusion` | 1 | `qr-rmsnorm-fusion__eLviek3` | `infra-bench/jobs/codex-gpt-5.6-terra/qr-rmsnorm-fusion__eLviek3/agent/trajectory.json` |  |
+| `sglang-mmmu-ipc-crash` | 1 | `sglang-mmmu-ipc-crash__HApnfxE` | `infra-bench/jobs/codex-gpt-5.6-terra/sglang-mmmu-ipc-crash__HApnfxE/agent/trajectory.json` |  |
+| `sglang-sync-stall` | 1 | `sglang-sync-stall__r8DWsuB` | `infra-bench/jobs/codex-gpt-5.6-terra/sglang-sync-stall__r8DWsuB/agent/trajectory.json` |  |
+| `triton-matmul-tuning` | 1 | `triton-matmul-tuning__vcF53dr` | `infra-bench/jobs/codex-gpt-5.6-terra/triton-matmul-tuning__vcF53dr/agent/trajectory.json` |  |
+| `vllm-aiter-debug` | 1 | `vllm-aiter-debug__nc5paDp` | `infra-bench/jobs/codex-gpt-5.6-terra/vllm-aiter-debug__nc5paDp/agent/trajectory.json` |  |

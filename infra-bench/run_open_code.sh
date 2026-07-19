@@ -37,7 +37,7 @@ MODEL="${MODEL:-gpt-5.5}"
 PROVIDER_ID="${AMD_OPENCODE_PROVIDER:-amd}"
 GATEWAY_BASE_URL="${AMD_CODEX_BASE_URL:-https://llm-api.amd.com/Unified/v1}"
 # AI-SDK adapter (opencode `npm`). Reasoning models (gpt-5.5) need the Responses
-# API → @ai-sdk/openai. Plain chat models (Kimi-K2.7-Code) use chat/completions →
+# API → @ai-sdk/openai. Plain chat models (Kimi-K2.6) use chat/completions →
 # @ai-sdk/openai-compatible. Override per model with AMD_OPENCODE_NPM.
 OPENCODE_NPM="${AMD_OPENCODE_NPM:-@ai-sdk/openai}"
 
@@ -70,11 +70,25 @@ provider, base_url, model, subkey, ntid, npm = sys.argv[1:7]
 # providers have no models.dev pricing, so without this the hub "Cost USD" column
 # is blank. Matched by case-insensitive substring, longest key first.
 PRICING = {
-    # DeepSeek + GLM: vendor-published prices from price.md (separate cache-hit
-    # via cache_read vs cache-miss via input). DeepSeek also matches litellm.
+    # OpenCode planned chat models. Rates below are USD per 1M tokens. LiteLLM
+    # stores per-token rates; these are converted by multiplying by 1,000,000.
+    # If LiteLLM has no cache_read_input_token_cost for a source key, cache_read
+    # falls back to the input rate.
+    #
+    # LiteLLM source keys:
+    # - deepseek-v4-flash
+    # - kimi-k2.6
+    # - xai/grok-4.3
+    # - scaleway/qwen/qwen3.6-35b-a3b
+    # - gemini-3.5-flash
+    # - bedrock_mantle/google.gemma-4-31b
+    # - sambanova/MiniMax-M2.7
     "deepseek-v4-flash": {"input": 0.14,  "output": 0.28, "cache_read": 0.0028},
     "deepseek-v4-pro":   {"input": 0.435, "output": 0.87, "cache_read": 0.003625},
     "deepseek":          {"input": 0.14,  "output": 0.28, "cache_read": 0.0028},
+    "grok-4.3":          {"input": 1.25,  "output": 2.5,  "cache_read": 0.20},
+    "qwen3.6-35b-a3b":   {"input": 0.25,  "output": 1.5,  "cache_read": 0.25},
+    "gemma-4-31b":       {"input": 0.14,  "output": 0.4,  "cache_read": 0.14},
     "glm-5.2":           {"input": 1.4,   "output": 4.4,  "cache_read": 0.26},
     "glm":               {"input": 1.4,   "output": 4.4,  "cache_read": 0.26},
     # GPT + Gemini: authoritative rates from LiteLLM's model_cost table (the same
@@ -84,6 +98,7 @@ PRICING = {
     "gpt-5":         {"input": 1.25, "output": 10.0, "cache_read": 0.125},
     "gpt-4.1":       {"input": 2.0,  "output": 8.0,  "cache_read": 0.5},
     "gpt-4o":        {"input": 2.5,  "output": 10.0, "cache_read": 1.25},
+    "gemini-3.5-flash":{"input": 1.5, "output": 9.0, "cache_read": 0.15},
     "gemini-3.1-pro":{"input": 2.0,  "output": 12.0, "cache_read": 0.2},
     "gemini-2.5-pro":{"input": 1.25, "output": 10.0, "cache_read": 0.125},
     "gemini-2.5-flash":{"input": 0.30, "output": 2.5, "cache_read": 0.03},
@@ -95,10 +110,10 @@ PRICING = {
     "kimi-k2.5":                {"input": 0.60, "output": 3.0,  "cache_read": 0.10},
     "kimi-k3":                  {"input": 3.0,  "output": 15.0, "cache_read": 0.30},
     "kimi":                     {"input": 0.95, "output": 4.0,  "cache_read": 0.19},
-    # MiniMax: official vendor prices (input = cache-MISS, cache_read = cache-HIT).
+    # MiniMax: LiteLLM source key sambanova/MiniMax-M2.7 for the planned model.
     # Longest key first so m2.7-highspeed beats m2.7.
     "minimax-m2.7-highspeed":   {"input": 0.6,  "output": 2.4,  "cache_read": 0.06},
-    "minimax-m2.7":             {"input": 0.3,  "output": 1.2,  "cache_read": 0.06},
+    "minimax-m2.7":             {"input": 0.6,  "output": 2.4,  "cache_read": 0.6},
     "minimax-m3":               {"input": 0.6,  "output": 2.4,  "cache_read": 0.12},
     "minimax":                  {"input": 0.3,  "output": 1.2,  "cache_read": 0.06},
     # NOTE: gemini-3.5-pro-preview intentionally omitted — no public price yet.
@@ -113,7 +128,7 @@ def price(m):
 
 # npm picks the endpoint: @ai-sdk/openai → /v1/responses (reasoning models like
 # gpt-5.5); @ai-sdk/openai-compatible → /v1/chat/completions (plain chat models
-# like Kimi-K2.7-Code). Override with AMD_OPENCODE_NPM.
+# like Kimi-K2.6). Override with AMD_OPENCODE_NPM.
 cfg = {
     "provider": {
         provider: {

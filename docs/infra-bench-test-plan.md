@@ -16,19 +16,27 @@ Each model family is driven by the agent that natively speaks its API:
 
 | Agent | Runner | Provider (hub col) | Models to test |
 |-------|--------|--------------------|----------------|
-| **claude-code** | `run_claude_code.sh` | (blank — Anthropic gateway) | `claude-opus-4.6`, `claude-haiku-4.5`, `Claude-Sonnet-5` |
-| **codex** | `run_codex.sh` | `openai` | `gpt-5.6-sol`, `gpt-5.6-luna`, `gpt-5.5` |
-| **opencode** | `run_open_code.sh` | `amd` | `DeepSeek-V4-Flash`, `MiniMax-M2.7` |
+| **claude-code** | `run_claude_code.sh` | (blank — Anthropic gateway) | `claude-opus-4.6`, `claude-haiku-4.5`, `Claude-Sonnet-5`, `claude-opus-4.8` |
+| **codex** | `run_codex.sh` | `openai` | `gpt-5.6-sol`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.6-terra` |
+| **opencode** | `run_open_code.sh` | `amd` | `DeepSeek-V4-Flash` (retest), `MiniMax-M2.7`, `Kimi-K2.6`, `Qwen3.6-35B-A3B`, `gemini-3.5-flash`, `Gemma-4-31B` |
 
-All 8 models confirmed present in the gateway catalog (`/v1/models`).
+All 14 planned models are available in the AMD LLM gateway catalog
+(`/v1/models`).
+
+`Grok-4.3` is excluded from the active test plan. The dashboard shows the model
+as operational, but the current AMD Unified endpoint and the runner's configured
+gateway route reject `Grok-4.3` for both Chat Completions and Responses with
+`Deployment of "Grok-4.3" ... is not found`.
 
 > **opencode adapter rule (`AMD_OPENCODE_NPM`)** — the gateway routes models to
 > different endpoints, so opencode's AI-SDK adapter must match the model:
 > - **reasoning models** (`gpt-5.x`) → `@ai-sdk/openai` (Responses API) — the default
-> - **chat models** (DeepSeek, MiniMax, Gemini, Kimi, GLM) → `@ai-sdk/openai-compatible` (chat/completions)
+> - **chat models** (DeepSeek, MiniMax, Kimi, Qwen, Gemini, GLM) → `@ai-sdk/openai-compatible` (chat/completions)
 >
 > The models in *this* plan that go through opencode (DeepSeek-V4-Flash,
-> MiniMax-M2.7) are chat models → always pass `AMD_OPENCODE_NPM='@ai-sdk/openai-compatible'`.
+> MiniMax-M2.7, Kimi-K2.6, Qwen3.6-35B-A3B, gemini-3.5-flash, and
+> Gemma-4-31B) are treated as chat models → always pass
+> `AMD_OPENCODE_NPM='@ai-sdk/openai-compatible'`.
 
 ---
 
@@ -80,14 +88,32 @@ Before a full sweep, confirm each agent authenticates and passes `hello-rocm`:
 # claude-code
 MODEL=claude-opus-4.6 ./run_claude_code.sh -i hello-rocm
 
+# claude-code round-2 addition
+MODEL=claude-opus-4.8 ./run_claude_code.sh -i hello-rocm
+
 # codex
 MODEL=gpt-5.5 ./run_codex.sh -i hello-rocm
+
+# codex round-3 addition
+JOB_NAME=smoke-codex-gpt-5.6-terra MODEL=gpt-5.6-terra ./run_codex.sh -i hello-rocm
 
 # opencode (chat model → openai-compatible adapter)
 MODEL=DeepSeek-V4-Flash AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' ./run_open_code.sh -i hello-rocm
 ```
 
-Each should print `1/1 passed`. If an agent fails auth, fix that before sweeping.
+For newly added opencode models and the DeepSeek retest, run a model-specific
+`hello-rocm` smoke before the full sweep:
+
+```bash
+for MODEL in DeepSeek-V4-Flash Kimi-K2.6 Qwen3.6-35B-A3B gemini-3.5-flash Gemma-4-31B; do
+  JOB_NAME="smoke-opencode-${MODEL,,}" \
+  MODEL="$MODEL" AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  ./run_open_code.sh -i hello-rocm
+done
+```
+
+Each smoke should print `1/1 passed`. If an agent or model fails auth/routing,
+fix that before sweeping.
 
 ### Full 20-task sweep per model
 
@@ -99,16 +125,26 @@ Give each run a descriptive `JOB_NAME` so the hub scoreboard is readable
 JOB_NAME=claude-opus-4.6   MODEL=claude-opus-4.6   INFRA_PARALLEL=6 ./run_claude_code.sh
 JOB_NAME=claude-haiku-4.5  MODEL=claude-haiku-4.5  INFRA_PARALLEL=6 ./run_claude_code.sh
 JOB_NAME=claude-sonnet-5   MODEL=Claude-Sonnet-5   INFRA_PARALLEL=6 ./run_claude_code.sh
+JOB_NAME=claude-opus-4.8   MODEL=claude-opus-4.8   INFRA_PARALLEL=6 ./run_claude_code.sh
 
 # ---- codex (AMD Unified, provider=openai) ----
 JOB_NAME=codex-gpt-5.6-sol   MODEL=gpt-5.6-sol   INFRA_PARALLEL=6 ./run_codex.sh
 JOB_NAME=codex-gpt-5.6-luna  MODEL=gpt-5.6-luna  INFRA_PARALLEL=6 ./run_codex.sh
 JOB_NAME=codex-gpt-5.5       MODEL=gpt-5.5       INFRA_PARALLEL=6 ./run_codex.sh
+JOB_NAME=codex-gpt-5.6-terra MODEL=gpt-5.6-terra INFRA_PARALLEL=6 ./run_codex.sh
 
 # ---- opencode (AMD Unified, provider=amd; chat adapter) ----
 JOB_NAME=opencode-deepseek-v4-flash MODEL=DeepSeek-V4-Flash \
   AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' INFRA_PARALLEL=6 ./run_open_code.sh
 JOB_NAME=opencode-minimax-m2.7 MODEL=MiniMax-M2.7 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' INFRA_PARALLEL=6 ./run_open_code.sh
+JOB_NAME=opencode-kimi-k2.6 MODEL=Kimi-K2.6 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' INFRA_PARALLEL=6 ./run_open_code.sh
+JOB_NAME=opencode-qwen3.6-35b-a3b MODEL=Qwen3.6-35B-A3B \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' INFRA_PARALLEL=6 ./run_open_code.sh
+JOB_NAME=opencode-gemini-3.5-flash MODEL=gemini-3.5-flash \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' INFRA_PARALLEL=6 ./run_open_code.sh
+JOB_NAME=opencode-gemma-4-31b MODEL=Gemma-4-31B \
   AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' INFRA_PARALLEL=6 ./run_open_code.sh
 ```
 
@@ -125,7 +161,22 @@ From `jobs/<JOB_NAME>/` (or the hub Jobs table):
 - **reward** — `verifier/reward.txt` per task (`1`=pass, `0`=fail); the runner's
   `passed/total` is the headline score.
 - **cost** — `result.json → agent_result.cost_usd` (claude/codex compute it
-  natively; opencode via the injected per-model pricing block).
+  natively; opencode via the injected per-model pricing block). The planned
+  opencode model prices are prefilled in `run_open_code.sh`.
+
+OpenCode pricing reference from LiteLLM, converted to USD per 1M tokens. Cache
+read uses LiteLLM's `cache_read_input_token_cost` when present; otherwise it
+falls back to the input rate in `run_open_code.sh`.
+
+| Model | LiteLLM source key | Input | Output | Cache read |
+|---|---|---:|---:|---:|
+| `DeepSeek-V4-Flash` | `deepseek-v4-flash` | 0.14 | 0.28 | 0.0028 |
+| `MiniMax-M2.7` | `sambanova/MiniMax-M2.7` | 0.60 | 2.40 | 0.60 |
+| `Kimi-K2.6` | `kimi-k2.6` | 0.95 | 4.00 | 0.16 |
+| `Qwen3.6-35B-A3B` | `scaleway/qwen/qwen3.6-35b-a3b` | 0.25 | 1.50 | 0.25 |
+| `gemini-3.5-flash` | `gemini-3.5-flash` | 1.50 | 9.00 | 0.15 |
+| `Gemma-4-31B` | `bedrock_mantle/google.gemma-4-31b` | 0.14 | 0.40 | 0.14 |
+
 - **latency** — `result.json` phase timings (`agent_execution`).
 - **failure triage** — for reward-0: is it a genuine miss (verifier ran, see
   `verifier/test-stdout.txt`) or an infra/gateway error (`exception.txt` —
@@ -140,7 +191,8 @@ task latency.
 ## Known gotchas / notes for the tester
 
 - **Model casing matters.** Use the exact catalog id (e.g. `Claude-Sonnet-5`,
-  `DeepSeek-V4-Flash`, `MiniMax-M2.7`). List the catalog with
+  `DeepSeek-V4-Flash`, `Kimi-K2.6`, `Qwen3.6-35B-A3B`,
+  `gemini-3.5-flash`, `Gemma-4-31B`). List the catalog with
   `curl -s $LLM_GATEWAY_URL/v1/models -H "Ocp-Apim-Subscription-Key: <key>" -H "ntid: <ntid>"`.
 - **Do NOT provider-prefix the claude model** (`anthropic/claude-...`) — this
   claude-code build passes the model verbatim and the gateway 400s on it. Bare
@@ -148,10 +200,12 @@ task latency.
 - **opencode reasoning vs chat adapter** — wrong adapter → 400
   "reasoning_effort not supported on /v1/chat/completions" (reasoning model on
   chat adapter) or a tool-call failure. Match per the adapter rule above.
-- **Backend flakiness (gateway-side, not our config):** some open-source model
-  backends have been unstable — Kimi (EngineCore crash), GLM-5.2-FP8 (404
-  OnPremLLM NotFound). If a model 404s/500s at the gateway, it's a backend
-  outage; retry later or skip. DeepSeek-V4-Flash and MiniMax-M2.7 were healthy.
+- **Backend flakiness (gateway-side, not our config):** if a model 404s/500s at
+  the gateway, treat it as a backend outage; retry later or skip. The current
+  opencode plan assumes `DeepSeek-V4-Flash`, `Kimi-K2.6`,
+  `Qwen3.6-35B-A3B`, `gemini-3.5-flash`, and `Gemma-4-31B` are available in the
+  AMD LLM gateway. `Grok-4.3` is skipped until the gateway exposes a working
+  model id or route for this runner.
 - **Gateway pressure at high concurrency:** long agentic sessions occasionally
   drop (`UnknownApiError`, exit 143). If a sweep shows several such exceptions,
   lower `INFRA_PARALLEL` or add `-k 2` (auto-retry attempts).
@@ -168,7 +222,8 @@ task latency.
 
 1. Smoke test (hello-rocm) for all 3 agents → confirm auth.
 2. Full sweep, one model at a time (serial across models; `INFRA_PARALLEL`
-   parallelizes tasks within a model). ~8 sweeps total.
+   parallelizes tasks within a model). 14 sweeps total, including the
+   `DeepSeek-V4-Flash` opencode retest.
 3. Triage reward-0s: separate genuine misses from infra/gateway errors; re-run
    infra failures.
 4. Build the agent × model scoreboard (pass-rate, cost, latency).
