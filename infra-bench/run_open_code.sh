@@ -57,12 +57,20 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Some on-prem servers advertise model ids as /models/<name>. Passing that raw
+# value through both Harbor and OpenCode creates provider//models/<name> display
+# metadata. Keep the runtime id path-like without a leading slash, and normalize
+# the provider catalog/display key to the bare model name.
+MODEL_ID="${AMD_OPENCODE_MODEL_ID:-${MODEL#/}}"
+MODEL_DISPLAY="${AMD_OPENCODE_DISPLAY_MODEL:-$MODEL_ID}"
+MODEL_DISPLAY="${MODEL_DISPLAY#models/}"
+
 # Build the opencode provider-config JSON. Registers a custom OpenAI-compatible
-# provider that carries the required header + base URL, and declares the model so
-# opencode won't reject it as unknown.
-OPENCODE_CONFIG="$(python3 - "$PROVIDER_ID" "$GATEWAY_BASE_URL" "$MODEL" "$AMD_GATEWAY_SUBKEY" "$NTID" "$OPENCODE_NPM" <<'PY'
+# provider that carries the required header + base URL, and declares the display
+# model key used for pricing and hub metadata.
+OPENCODE_CONFIG="$(python3 - "$PROVIDER_ID" "$GATEWAY_BASE_URL" "$MODEL_DISPLAY" "$MODEL_ID" "$AMD_GATEWAY_SUBKEY" "$NTID" "$OPENCODE_NPM" <<'PY'
 import json, sys
-provider, base_url, model, subkey, ntid, npm = sys.argv[1:7]
+provider, base_url, model, runtime_model, subkey, ntid, npm = sys.argv[1:8]
 
 # opencode computes Cost USD from a per-model `cost` block (USD per MILLION
 # tokens). Fields: input (= cache-MISS input rate), output, cache_read (= cache-
@@ -80,14 +88,27 @@ PRICING = {
     # - kimi-k2.6
     # - xai/grok-4.3
     # - scaleway/qwen/qwen3.6-35b-a3b
+    # - libertai/qwen3.6-27b
+    # - on-prem Qwopus3.6 aliases map to the matching Qwen3.6 reference prices
+    # - tensormesh/Qwen/Qwen3.5-397B-A17B-FP8
+    # - openrouter/qwen/qwen3.5-35b-a3b
+    # - openrouter/qwen/qwen3.5-27b
     # - gemini-3.5-flash
     # - bedrock_mantle/google.gemma-4-31b
     # - sambanova/MiniMax-M2.7
+    # - openrouter/xiaomi/mimo-v2-flash
     "deepseek-v4-flash": {"input": 0.14,  "output": 0.28, "cache_read": 0.0028},
     "deepseek-v4-pro":   {"input": 0.435, "output": 0.87, "cache_read": 0.003625},
     "deepseek":          {"input": 0.14,  "output": 0.28, "cache_read": 0.0028},
     "grok-4.3":          {"input": 1.25,  "output": 2.5,  "cache_read": 0.20},
     "qwen3.6-35b-a3b":   {"input": 0.25,  "output": 1.5,  "cache_read": 0.25},
+    "qwen3.6-27b":       {"input": 0.15,  "output": 0.5,  "cache_read": 0.15},
+    "qwopus3.6-35b-a3b": {"input": 0.25,  "output": 1.5,  "cache_read": 0.25},
+    "qwopus3.6-27b":     {"input": 0.15,  "output": 0.5,  "cache_read": 0.15},
+    "qwen3.5-397b-a17b-fp8": {"input": 0.60, "output": 3.6, "cache_read": 0.60},
+    "qwen3.5-397b-a17b": {"input": 0.60,  "output": 3.6,  "cache_read": 0.60},
+    "qwen3.5-35b-a3b":   {"input": 0.25,  "output": 2.0,  "cache_read": 0.25},
+    "qwen3.5-27b":       {"input": 0.30,  "output": 2.4,  "cache_read": 0.30},
     "gemma-4-31b":       {"input": 0.14,  "output": 0.4,  "cache_read": 0.14},
     "glm-5.2":           {"input": 1.4,   "output": 4.4,  "cache_read": 0.26},
     "glm":               {"input": 1.4,   "output": 4.4,  "cache_read": 0.26},
@@ -116,6 +137,8 @@ PRICING = {
     "minimax-m2.7":             {"input": 0.6,  "output": 2.4,  "cache_read": 0.6},
     "minimax-m3":               {"input": 0.6,  "output": 2.4,  "cache_read": 0.12},
     "minimax":                  {"input": 0.3,  "output": 1.2,  "cache_read": 0.06},
+    # MiMo: LiteLLM source key openrouter/xiaomi/mimo-v2-flash.
+    "mimo-v2-flash":            {"input": 0.1,  "output": 0.3,  "cache_read": 0.01},
     # NOTE: gemini-3.5-pro-preview intentionally omitted — no public price yet.
 }
 def price(m):
@@ -125,6 +148,15 @@ def price(m):
         if k in ml:
             return PRICING[k]
     return None  # unknown model → no cost block (leave hub Cost USD blank)
+
+display_price = price(model)
+runtime_price = price(runtime_model) or display_price
+models = {model: ({"cost": display_price} if display_price else {})}
+if runtime_model != model:
+    # OpenCode's generated provider config includes the runtime model id
+    # (e.g. models/Foo) and uses it for cost accounting, while hub display
+    # metadata is cleaner with the bare display key (Foo). Register both.
+    models[runtime_model] = {"cost": runtime_price} if runtime_price else {}
 
 # npm picks the endpoint: @ai-sdk/openai → /v1/responses (reasoning models like
 # gpt-5.5); @ai-sdk/openai-compatible → /v1/chat/completions (plain chat models
@@ -145,7 +177,7 @@ cfg = {
                     "ntid": ntid,
                 },
             },
-            "models": {model: ({"cost": price(model)} if price(model) else {})},
+            "models": models,
         }
     }
 }
@@ -154,7 +186,7 @@ PY
 )"
 
 # Model must be provider-qualified for opencode's provider/model split.
-QUALIFIED_MODEL="${PROVIDER_ID}/${MODEL}"
+QUALIFIED_MODEL="${PROVIDER_ID}/${MODEL_ID}"
 
 AGENT_ARGS=(
   -a opencode

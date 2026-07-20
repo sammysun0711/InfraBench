@@ -1637,3 +1637,602 @@ trial rows as `onprem/MiniMax-M3`.
 | `sglang-sync-stall` | 0 | `sglang-sync-stall__eHCnWJ2` | `infra-bench/jobs/opencode-minimax-m3-onprem/sglang-sync-stall__eHCnWJ2/agent/trajectory.json` | `ApiRateLimitError` |
 | `triton-matmul-tuning` | 1 | `triton-matmul-tuning__22shJaC` | `infra-bench/jobs/opencode-minimax-m3-onprem/triton-matmul-tuning__22shJaC/agent/trajectory.json` |  |
 | `vllm-aiter-debug` | 0 | `vllm-aiter-debug__MUCHkDo` | `infra-bench/jobs/opencode-minimax-m3-onprem/vllm-aiter-debug__MUCHkDo/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+
+## Round 6 Results
+
+Run date: 2026-07-19
+
+Round 6 adds on-prem OpenCode sweeps for `Kimi-K2.7-Code`,
+`Qwopus3.6-27B-Coder`, and `Qwopus3.6-35B-A3B-Coder`. The Kimi run uses the
+on-prem vLLM server at `http://10.145.64.81:30000/v1`; vLLM advertises only
+`/models/Kimi-K2.7-Code`, so OpenCode must request that exact served model id.
+
+### Round 6 Smoke Tests
+
+| Agent | Model | Job | Reward | Cost USD | Run log | Trajectory/log |
+|---|---|---|---:|---:|---|---|
+| opencode | `/models/Kimi-K2.7-Code` | `smoke-opencode-kimi-k2.7-code-onprem-modelpath` | 1/1 | 0.013587 | `infra-bench/jobs/smoke-opencode-kimi-k2.7-code-onprem-modelpath/run.log` | `infra-bench/jobs/smoke-opencode-kimi-k2.7-code-onprem-modelpath/hello-rocm__fQek2du/agent/trajectory.json` |
+| opencode | `/models/Qwopus3.6-27B-Coder` | `smoke-opencode-qwopus3.6-27b-coder-onprem-modelpath` | 0/1 | - | `infra-bench/jobs/smoke-opencode-qwopus3.6-27b-coder-onprem-modelpath/run.log` | `infra-bench/jobs/smoke-opencode-qwopus3.6-27b-coder-onprem-modelpath/hello-rocm__xALpSMD/agent/opencode.txt` |
+| opencode | `/models/Qwopus3.6-27B-Coder` | `smoke-opencode-qwopus3.6-27b-coder-onprem-modelpath-rerun` | 0/1 | - | `infra-bench/jobs/smoke-opencode-qwopus3.6-27b-coder-onprem-modelpath-rerun/run.log` | `infra-bench/jobs/smoke-opencode-qwopus3.6-27b-coder-onprem-modelpath-rerun/hello-rocm__HqrRVxX/agent/opencode.txt` |
+| opencode | `/models/Qwopus3.6-27B-Coder` | `smoke-opencode-qwopus3.6-27b-coder-onprem-modelpath-rerun2` | 0/1 | - | `infra-bench/jobs/smoke-opencode-qwopus3.6-27b-coder-onprem-modelpath-rerun2/run.log` | `infra-bench/jobs/smoke-opencode-qwopus3.6-27b-coder-onprem-modelpath-rerun2/hello-rocm__dnpwEuT/agent/opencode.txt` |
+| opencode | `/models/Qwopus3.6-35B-A3B-Coder` | `smoke-opencode-qwopus3.6-35b-a3b-coder-onprem-modelpath` | 0/1 | - | `infra-bench/jobs/smoke-opencode-qwopus3.6-35b-a3b-coder-onprem-modelpath/run.log` | `infra-bench/jobs/smoke-opencode-qwopus3.6-35b-a3b-coder-onprem-modelpath/hello-rocm__MnsJTgy/agent/opencode.txt` |
+| opencode | `/models/Qwopus3.6-27B-Coder` | `smoke-opencode-qwopus3.6-27b-coder-onprem-hostip` | 1/1 | 0.002430 | `infra-bench/jobs/smoke-opencode-qwopus3.6-27b-coder-onprem-hostip/run.log` | `infra-bench/jobs/smoke-opencode-qwopus3.6-27b-coder-onprem-hostip/hello-rocm__Dhsbzms/agent/trajectory.json` |
+| opencode | `/models/Qwopus3.6-35B-A3B-Coder` | `smoke-opencode-qwopus3.6-35b-a3b-coder-onprem-hostip` | 1/1 | 0.006440 | `infra-bench/jobs/smoke-opencode-qwopus3.6-35b-a3b-coder-onprem-hostip/run.log` | `infra-bench/jobs/smoke-opencode-qwopus3.6-35b-a3b-coder-onprem-hostip/hello-rocm__iTMzomG/agent/trajectory.json` |
+
+### `Kimi-K2.7-Code` via OpenCode On-Prem
+
+Smoke command:
+
+```bash
+JOB_NAME=smoke-opencode-kimi-k2.7-code-onprem-modelpath \
+  MODEL=/models/Kimi-K2.7-Code \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://10.145.64.81:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  ./run_open_code.sh -i hello-rocm
+```
+
+Smoke result summary:
+
+```text
+Trials: 1
+Exceptions: 0
+Reward 1.0: 1
+Reward 0.0: 0
+Cost USD: 0.013587
+Input tokens: 13279
+Cache tokens: 0
+Output tokens: 243
+Results written to /home/xisun/InfraBench/infra-bench/jobs/smoke-opencode-kimi-k2.7-code-onprem-modelpath/result.json
+Run log: /home/xisun/InfraBench/infra-bench/jobs/smoke-opencode-kimi-k2.7-code-onprem-modelpath/run.log
+```
+
+Full sweep command:
+
+```bash
+JOB_NAME=opencode-kimi-k2.7-code-onprem MODEL=/models/Kimi-K2.7-Code \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://10.145.64.81:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  INFRA_PARALLEL=4 INFRABENCH_GPU_COUNT=8 ./run_open_code.sh
+```
+
+Full result summary:
+
+```text
+Trials: 20
+Exceptions: 6
+Reward 1.0: 18
+Reward 0.0: 2
+Mean reward: 0.900
+Total runtime: 3h 30m 39s
+Cost USD: 96.618066
+Median agent execution: 18m 27s
+Input tokens: 97838806
+Cache tokens: 0
+Output tokens: 917800
+Results written to /home/xisun/InfraBench/infra-bench/jobs/opencode-kimi-k2.7-code-onprem/result.json
+Run log: /home/xisun/InfraBench/infra-bench/jobs/opencode-kimi-k2.7-code-onprem/run.log
+```
+
+Exception counts: `AgentTimeoutError`=3, `NonZeroAgentExitCodeError`=2,
+`ApiRateLimitError`=1.
+
+All 20 trials have structured `agent/trajectory.json` files and raw OpenCode
+event logs at `agent/opencode.txt`. The job artifacts were checked after the
+run and the gateway header was scrubbed from the saved JSON metadata. Before
+upload, display metadata was normalized from `/models/Kimi-K2.7-Code` to
+`Kimi-K2.7-Code`:
+`stats.evals` now uses `opencode__Kimi-K2.7-Code__infra-bench`, trial
+`agent_info.model_info.name=Kimi-K2.7-Code`, and the saved run config records
+`config.agent.model_name=onprem/models/Kimi-K2.7-Code` with provider catalog key
+`Kimi-K2.7-Code`.
+
+Scoreboard: **18/20 passed**.
+
+Harbor upload: private job `72208869-fb6a-40ae-88c2-fd70fc944c71`, uploaded
+with `harbor upload /home/xisun/InfraBench/infra-bench/jobs/opencode-kimi-k2.7-code-onprem`
+on 2026-07-19.
+
+| Task | Reward | Trial | Trajectory/log | Exception |
+|---|---:|---|---|---|
+| `cute-layout-composition` | 1 | `cute-layout-composition__EXwBo6p` | `infra-bench/jobs/opencode-kimi-k2.7-code-onprem/cute-layout-composition__EXwBo6p/agent/trajectory.json` | `AgentTimeoutError` |
+| `dwconv3d-occupancy` | 1 | `dwconv3d-occupancy__9ipvZR6` | `infra-bench/jobs/opencode-kimi-k2.7-code-onprem/dwconv3d-occupancy__9ipvZR6/agent/trajectory.json` |  |
+| `engram-triton-kernel` | 1 | `engram-triton-kernel__EojdHbs` | `infra-bench/jobs/opencode-kimi-k2.7-code-onprem/engram-triton-kernel__EojdHbs/agent/trajectory.json` | `AgentTimeoutError` |
+| `flydsl-cdna4-preshuffle-gemm` | 1 | `flydsl-cdna4-preshuffle-gemm__GDk4f4y` | `infra-bench/jobs/opencode-kimi-k2.7-code-onprem/flydsl-cdna4-preshuffle-gemm__GDk4f4y/agent/trajectory.json` |  |
+| `gemm-fp8-ptpc-quant` | 1 | `gemm-fp8-ptpc-quant__jan3wXZ` | `infra-bench/jobs/opencode-kimi-k2.7-code-onprem/gemm-fp8-ptpc-quant__jan3wXZ/agent/trajectory.json` |  |
+| `gemma4-gemm-tuning` | 0 | `gemma4-gemm-tuning__AGrUTTg` | `infra-bench/jobs/opencode-kimi-k2.7-code-onprem/gemma4-gemm-tuning__AGrUTTg/agent/trajectory.json` |  |
+| `gemma4-sglang-serving-opt` | 1 | `gemma4-sglang-serving-opt__mZ2xq2T` | `infra-bench/jobs/opencode-kimi-k2.7-code-onprem/gemma4-sglang-serving-opt__mZ2xq2T/agent/trajectory.json` | `AgentTimeoutError` |
+| `gluon-a8w8-mfma-att` | 1 | `gluon-a8w8-mfma-att__d94ZXe4` | `infra-bench/jobs/opencode-kimi-k2.7-code-onprem/gluon-a8w8-mfma-att__d94ZXe4/agent/trajectory.json` |  |
+| `hello-rocm` | 1 | `hello-rocm__Gr7WFRe` | `infra-bench/jobs/opencode-kimi-k2.7-code-onprem/hello-rocm__Gr7WFRe/agent/trajectory.json` |  |
+| `hotspot-analysis-torch-profiler` | 1 | `hotspot-analysis-torch-profiler__hypAE8W` | `infra-bench/jobs/opencode-kimi-k2.7-code-onprem/hotspot-analysis-torch-profiler__hypAE8W/agent/trajectory.json` | `ApiRateLimitError` |
+| `llm-fp8-quantize` | 1 | `llm-fp8-quantize__hiLmLMv` | `infra-bench/jobs/opencode-kimi-k2.7-code-onprem/llm-fp8-quantize__hiLmLMv/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+| `llvm-simple-constant-propagation` | 1 | `llvm-simple-constant-propagation__HgpjFMd` | `infra-bench/jobs/opencode-kimi-k2.7-code-onprem/llvm-simple-constant-propagation__HgpjFMd/agent/trajectory.json` |  |
+| `mem-bandwidth-bench` | 1 | `mem-bandwidth-bench__vzaagGu` | `infra-bench/jobs/opencode-kimi-k2.7-code-onprem/mem-bandwidth-bench__vzaagGu/agent/trajectory.json` |  |
+| `paged-attention-hd256` | 0 | `paged-attention-hd256__Mxu39Mw` | `infra-bench/jobs/opencode-kimi-k2.7-code-onprem/paged-attention-hd256__Mxu39Mw/agent/trajectory.json` |  |
+| `pointnet2-hipify` | 1 | `pointnet2-hipify__PoUp7kp` | `infra-bench/jobs/opencode-kimi-k2.7-code-onprem/pointnet2-hipify__PoUp7kp/agent/trajectory.json` |  |
+| `qr-rmsnorm-fusion` | 1 | `qr-rmsnorm-fusion__MQjfgMx` | `infra-bench/jobs/opencode-kimi-k2.7-code-onprem/qr-rmsnorm-fusion__MQjfgMx/agent/trajectory.json` |  |
+| `sglang-mmmu-ipc-crash` | 1 | `sglang-mmmu-ipc-crash__srWqRBG` | `infra-bench/jobs/opencode-kimi-k2.7-code-onprem/sglang-mmmu-ipc-crash__srWqRBG/agent/trajectory.json` |  |
+| `sglang-sync-stall` | 1 | `sglang-sync-stall__JoCGCbQ` | `infra-bench/jobs/opencode-kimi-k2.7-code-onprem/sglang-sync-stall__JoCGCbQ/agent/trajectory.json` |  |
+| `triton-matmul-tuning` | 1 | `triton-matmul-tuning__Ys82qKL` | `infra-bench/jobs/opencode-kimi-k2.7-code-onprem/triton-matmul-tuning__Ys82qKL/agent/trajectory.json` |  |
+| `vllm-aiter-debug` | 1 | `vllm-aiter-debug__ScdPoAv` | `infra-bench/jobs/opencode-kimi-k2.7-code-onprem/vllm-aiter-debug__ScdPoAv/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+
+### Qwopus3.6 OpenCode Smoke Triage
+
+The Qwopus servers are reachable from the host and advertise the expected model
+ids: `/models/Qwopus3.6-27B-Coder` on port 9527 and
+`/models/Qwopus3.6-35B-A3B-Coder` on port 9528. OpenCode runs inside
+InfraBench task containers, so `127.0.0.1` points at the task container rather
+than the host/container serving Qwopus. The working endpoint for task containers
+is the host-routable IP `10.145.64.87`.
+
+Direct local Chat Completions probes showed parser-specific tool-call formats:
+`Qwopus3.6-27B-Coder` emits Qwen JSON `<tool_call>...</tool_call>` blocks, so
+the local launch script was adjusted to `--tool-call-parser qwen25`;
+`Qwopus3.6-35B-A3B-Coder` emits `<function=...><parameter=...>` blocks and
+uses `--tool-call-parser qwen3_coder`. With those parser settings, direct local
+tool-call probes returned structured OpenAI `tool_calls` for both endpoints.
+
+The first OpenCode `hello-rocm` smokes used `127.0.0.1` and timed out before
+producing any OpenCode event output. Each failed smoke has an empty
+`agent/opencode.txt`, an `AgentTimeoutError`, no token/cost accounting, and
+verifier reward 0 because the agent never wrote `/app/gpu_report.json`. After
+switching `AMD_CODEX_BASE_URL` to `http://10.145.64.87:<port>/v1`, `hello-rocm`
+passed for both Qwopus models, so full sweeps can proceed with
+`INFRABENCH_GPU_COUNT=6` to avoid GPUs 6/7 used by the Qwopus servers.
+
+Failed 27B smoke with the original `qwen3_coder` parser:
+
+```bash
+JOB_NAME=smoke-opencode-qwopus3.6-27b-coder-onprem-modelpath \
+  MODEL=/models/Qwopus3.6-27B-Coder \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://127.0.0.1:9527/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  INFRABENCH_GPU_COUNT=6 \
+  ./run_open_code.sh -i hello-rocm
+```
+
+Result summary:
+
+```text
+Trials: 1
+Exceptions: 1
+Reward 1.0: 0
+Reward 0.0: 1
+Exception: AgentTimeoutError
+Total runtime: 10m 54s
+Results written to /home/xisun/InfraBench/infra-bench/jobs/smoke-opencode-qwopus3.6-27b-coder-onprem-modelpath/result.json
+```
+
+Failed 27B smoke after switching the 27B server to `qwen25` and doubling the
+timeout:
+
+```bash
+JOB_NAME=smoke-opencode-qwopus3.6-27b-coder-onprem-modelpath-rerun2 \
+  MODEL=/models/Qwopus3.6-27B-Coder \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://127.0.0.1:9527/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  INFRABENCH_GPU_COUNT=6 \
+  ./run_open_code.sh -i hello-rocm --timeout-multiplier 2
+```
+
+Result summary:
+
+```text
+Trials: 1
+Exceptions: 1
+Reward 1.0: 0
+Reward 0.0: 1
+Exception: AgentTimeoutError
+Total runtime: 25m 6s
+Results written to /home/xisun/InfraBench/infra-bench/jobs/smoke-opencode-qwopus3.6-27b-coder-onprem-modelpath-rerun2/result.json
+```
+
+Failed 35B smoke with `qwen3_coder` and doubled timeout:
+
+```bash
+JOB_NAME=smoke-opencode-qwopus3.6-35b-a3b-coder-onprem-modelpath \
+  MODEL=/models/Qwopus3.6-35B-A3B-Coder \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://127.0.0.1:9528/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  INFRABENCH_GPU_COUNT=6 \
+  ./run_open_code.sh -i hello-rocm --timeout-multiplier 2
+```
+
+Result summary:
+
+```text
+Trials: 1
+Exceptions: 1
+Reward 1.0: 0
+Reward 0.0: 1
+Exception: AgentTimeoutError
+Total runtime: 20m 36s
+Results written to /home/xisun/InfraBench/infra-bench/jobs/smoke-opencode-qwopus3.6-35b-a3b-coder-onprem-modelpath/result.json
+```
+
+Passed 27B smoke using the host-routable endpoint:
+
+```bash
+JOB_NAME=smoke-opencode-qwopus3.6-27b-coder-onprem-hostip \
+  MODEL=/models/Qwopus3.6-27B-Coder \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://10.145.64.87:9527/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  INFRABENCH_GPU_COUNT=6 \
+  ./run_open_code.sh -i hello-rocm
+```
+
+Result summary:
+
+```text
+Trials: 1
+Exceptions: 0
+Reward 1.0: 1
+Reward 0.0: 0
+Cost USD: 0.002430
+Input tokens: 15506
+Cache tokens: 0
+Output tokens: 208
+Total runtime: 51s
+Results written to /home/xisun/InfraBench/infra-bench/jobs/smoke-opencode-qwopus3.6-27b-coder-onprem-hostip/result.json
+Run log: /home/xisun/InfraBench/infra-bench/jobs/smoke-opencode-qwopus3.6-27b-coder-onprem-hostip/run.log
+```
+
+Passed 35B smoke using the host-routable endpoint:
+
+```bash
+JOB_NAME=smoke-opencode-qwopus3.6-35b-a3b-coder-onprem-hostip \
+  MODEL=/models/Qwopus3.6-35B-A3B-Coder \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://10.145.64.87:9528/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  INFRABENCH_GPU_COUNT=6 \
+  ./run_open_code.sh -i hello-rocm
+```
+
+Result summary:
+
+```text
+Trials: 1
+Exceptions: 0
+Reward 1.0: 1
+Reward 0.0: 0
+Cost USD: 0.006440
+Input tokens: 23906
+Cache tokens: 0
+Output tokens: 309
+Total runtime: 41s
+Results written to /home/xisun/InfraBench/infra-bench/jobs/smoke-opencode-qwopus3.6-35b-a3b-coder-onprem-hostip/result.json
+Run log: /home/xisun/InfraBench/infra-bench/jobs/smoke-opencode-qwopus3.6-35b-a3b-coder-onprem-hostip/run.log
+```
+
+### `Qwopus3.6-35B-A3B-Coder` via OpenCode On-Prem
+
+Full sweep command:
+
+```bash
+JOB_NAME=opencode-qwopus3.6-35b-a3b-coder-onprem \
+  MODEL=/models/Qwopus3.6-35B-A3B-Coder \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://10.145.64.87:9528/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  INFRA_PARALLEL=4 \
+  INFRABENCH_GPU_COUNT=6 \
+  ./run_open_code.sh
+```
+
+Full result summary:
+
+```text
+Trials: 20
+Exceptions: 9
+Reward 1.0: 4
+Reward 0.0: 16
+Mean reward: 0.200
+Total runtime: 2h 35m 47s
+Cost USD: 5.500557
+Median agent execution: 5m 20s
+Input tokens: 19727018
+Cache tokens: 0
+Output tokens: 379202
+Results written to /home/xisun/InfraBench/infra-bench/jobs/opencode-qwopus3.6-35b-a3b-coder-onprem/result.json
+Run log: /home/xisun/InfraBench/infra-bench/jobs/opencode-qwopus3.6-35b-a3b-coder-onprem/run.log
+```
+
+Exception counts: `AgentTimeoutError`=6, `NonZeroAgentExitCodeError`=3.
+
+All 20 trials have structured `agent/trajectory.json` files and raw OpenCode
+event logs at `agent/opencode.txt`. The `engram-triton-kernel`,
+`llm-fp8-quantize`, and `mem-bandwidth-bench` trials use reconstructed partial
+trajectories because the OpenCode JSON stream ended before a complete
+`step_finish` event. The saved JSON artifacts were checked after the run, and
+gateway header values are redacted.
+
+Display metadata was normalized before upload:
+`stats.evals=opencode__Qwopus3.6-35B-A3B-Coder__infra-bench`, trial
+`agent_info.model_info.name=Qwopus3.6-35B-A3B-Coder`, saved run config
+`config.agent.model_name=onprem/models/Qwopus3.6-35B-A3B-Coder`, and provider
+catalog key `Qwopus3.6-35B-A3B-Coder`.
+
+Scoreboard: **4/20 passed**.
+
+Harbor upload: private job `f38efb7a-e3a9-4c8a-a324-b27864415c63`, uploaded
+with `harbor upload /home/xisun/InfraBench/infra-bench/jobs/opencode-qwopus3.6-35b-a3b-coder-onprem`
+on 2026-07-20. Hub URL:
+`https://hub.harborframework.com/jobs/f38efb7a-e3a9-4c8a-a324-b27864415c63`.
+
+| Task | Reward | Trial | Trajectory/log | Exception |
+|---|---:|---|---|---|
+| `cute-layout-composition` | 0 | `cute-layout-composition__eokrozA` | `infra-bench/jobs/opencode-qwopus3.6-35b-a3b-coder-onprem/cute-layout-composition__eokrozA/agent/trajectory.json` |  |
+| `dwconv3d-occupancy` | 0 | `dwconv3d-occupancy__CLHeup3` | `infra-bench/jobs/opencode-qwopus3.6-35b-a3b-coder-onprem/dwconv3d-occupancy__CLHeup3/agent/trajectory.json` |  |
+| `engram-triton-kernel` | 0 | `engram-triton-kernel__TUQV8RQ` | `infra-bench/jobs/opencode-qwopus3.6-35b-a3b-coder-onprem/engram-triton-kernel__TUQV8RQ/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+| `flydsl-cdna4-preshuffle-gemm` | 0 | `flydsl-cdna4-preshuffle-gemm__LeQmP8r` | `infra-bench/jobs/opencode-qwopus3.6-35b-a3b-coder-onprem/flydsl-cdna4-preshuffle-gemm__LeQmP8r/agent/trajectory.json` | `AgentTimeoutError` |
+| `gemm-fp8-ptpc-quant` | 0 | `gemm-fp8-ptpc-quant__ZD2VfqS` | `infra-bench/jobs/opencode-qwopus3.6-35b-a3b-coder-onprem/gemm-fp8-ptpc-quant__ZD2VfqS/agent/trajectory.json` |  |
+| `gemma4-gemm-tuning` | 0 | `gemma4-gemm-tuning__xv77Cyg` | `infra-bench/jobs/opencode-qwopus3.6-35b-a3b-coder-onprem/gemma4-gemm-tuning__xv77Cyg/agent/trajectory.json` |  |
+| `gemma4-sglang-serving-opt` | 0 | `gemma4-sglang-serving-opt__ejApVCR` | `infra-bench/jobs/opencode-qwopus3.6-35b-a3b-coder-onprem/gemma4-sglang-serving-opt__ejApVCR/agent/trajectory.json` | `AgentTimeoutError` |
+| `gluon-a8w8-mfma-att` | 0 | `gluon-a8w8-mfma-att__taTcA5C` | `infra-bench/jobs/opencode-qwopus3.6-35b-a3b-coder-onprem/gluon-a8w8-mfma-att__taTcA5C/agent/trajectory.json` | `AgentTimeoutError` |
+| `hello-rocm` | 1 | `hello-rocm__TgTPkYe` | `infra-bench/jobs/opencode-qwopus3.6-35b-a3b-coder-onprem/hello-rocm__TgTPkYe/agent/trajectory.json` |  |
+| `hotspot-analysis-torch-profiler` | 0 | `hotspot-analysis-torch-profiler__q4SB2qc` | `infra-bench/jobs/opencode-qwopus3.6-35b-a3b-coder-onprem/hotspot-analysis-torch-profiler__q4SB2qc/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+| `llm-fp8-quantize` | 0 | `llm-fp8-quantize__YgMxs3N` | `infra-bench/jobs/opencode-qwopus3.6-35b-a3b-coder-onprem/llm-fp8-quantize__YgMxs3N/agent/trajectory.json` | `AgentTimeoutError` |
+| `llvm-simple-constant-propagation` | 1 | `llvm-simple-constant-propagation__T9xejC8` | `infra-bench/jobs/opencode-qwopus3.6-35b-a3b-coder-onprem/llvm-simple-constant-propagation__T9xejC8/agent/trajectory.json` |  |
+| `mem-bandwidth-bench` | 0 | `mem-bandwidth-bench__V75J9DJ` | `infra-bench/jobs/opencode-qwopus3.6-35b-a3b-coder-onprem/mem-bandwidth-bench__V75J9DJ/agent/trajectory.json` | `AgentTimeoutError` |
+| `paged-attention-hd256` | 0 | `paged-attention-hd256__gF26u82` | `infra-bench/jobs/opencode-qwopus3.6-35b-a3b-coder-onprem/paged-attention-hd256__gF26u82/agent/trajectory.json` |  |
+| `pointnet2-hipify` | 0 | `pointnet2-hipify__dGmV2v2` | `infra-bench/jobs/opencode-qwopus3.6-35b-a3b-coder-onprem/pointnet2-hipify__dGmV2v2/agent/trajectory.json` | `AgentTimeoutError` |
+| `qr-rmsnorm-fusion` | 0 | `qr-rmsnorm-fusion__pvFf4Ws` | `infra-bench/jobs/opencode-qwopus3.6-35b-a3b-coder-onprem/qr-rmsnorm-fusion__pvFf4Ws/agent/trajectory.json` |  |
+| `sglang-mmmu-ipc-crash` | 1 | `sglang-mmmu-ipc-crash__qtxL6Lw` | `infra-bench/jobs/opencode-qwopus3.6-35b-a3b-coder-onprem/sglang-mmmu-ipc-crash__qtxL6Lw/agent/trajectory.json` |  |
+| `sglang-sync-stall` | 0 | `sglang-sync-stall__g56jWYZ` | `infra-bench/jobs/opencode-qwopus3.6-35b-a3b-coder-onprem/sglang-sync-stall__g56jWYZ/agent/trajectory.json` |  |
+| `triton-matmul-tuning` | 0 | `triton-matmul-tuning__99YDNDD` | `infra-bench/jobs/opencode-qwopus3.6-35b-a3b-coder-onprem/triton-matmul-tuning__99YDNDD/agent/trajectory.json` |  |
+| `vllm-aiter-debug` | 1 | `vllm-aiter-debug__pEsHYJ8` | `infra-bench/jobs/opencode-qwopus3.6-35b-a3b-coder-onprem/vllm-aiter-debug__pEsHYJ8/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+
+## Round 7 Results
+
+Run date: 2026-07-20
+
+Round 7 adds an on-prem OpenCode sweep for `Qwen3.5-397B-A17B-FP8`. The model is
+served by SGLang from
+`/home/xisun/InfraBench/qwen3.5-397b-fp8/launch_sgl_qwen3.5_397b_server.sh` on
+another MI350 machine at `http://10.145.64.81:30000/v1`. SGLang advertises the
+model id `/models/Qwen3.5-397B-A17B-FP8`, so OpenCode must request that exact
+served model id.
+
+LiteLLM has `Qwen3.5-397B-A17B-FP8` pricing at `$0.60/M` input and `$3.60/M`
+output. The exact TensorMesh FP8 key lists cache-read as zero, but this run uses
+`$0.60/M` cache-read for conservative comparison. The completed full sweep
+reported zero cache tokens, so this choice did not affect the final cost.
+
+An interrupted pre-change full-sweep attempt that still had cache-read set to
+`$0.00/M` was stopped and moved to
+`infra-bench/jobs/opencode-qwen3.5-397b-a17b-fp8-onprem_cache0_stopped_20260720_070655`.
+The final job below is the clean rerun with cache-read set to `$0.60/M`.
+
+### Round 7 Smoke Test
+
+Smoke command:
+
+```bash
+JOB_NAME=smoke-opencode-qwen3.5-397b-a17b-fp8-onprem \
+  MODEL=/models/Qwen3.5-397B-A17B-FP8 \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://10.145.64.81:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  INFRABENCH_GPU_COUNT=6 \
+  ./run_open_code.sh -i hello-rocm
+```
+
+Smoke result summary:
+
+```text
+Trials: 1
+Exceptions: 0
+Reward 1.0: 1
+Reward 0.0: 0
+Cost USD: 0.011036
+Input tokens: 15880
+Cache tokens: 0
+Output tokens: 419
+Total runtime: 46s
+Results written to /home/xisun/InfraBench/infra-bench/jobs/smoke-opencode-qwen3.5-397b-a17b-fp8-onprem/result.json
+Run log: /home/xisun/InfraBench/infra-bench/jobs/smoke-opencode-qwen3.5-397b-a17b-fp8-onprem/run.log
+```
+
+### `Qwen3.5-397B-A17B-FP8` via OpenCode On-Prem
+
+Full sweep command:
+
+```bash
+JOB_NAME=opencode-qwen3.5-397b-a17b-fp8-onprem \
+  MODEL=/models/Qwen3.5-397B-A17B-FP8 \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://10.145.64.81:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  INFRA_PARALLEL=4 \
+  INFRABENCH_GPU_COUNT=6 \
+  ./run_open_code.sh
+```
+
+Full result summary:
+
+```text
+Trials: 20
+Exceptions: 4
+Reward 1.0: 9
+Reward 0.0: 11
+Mean reward: 0.450
+Total runtime: 50m 57s
+Cost USD: 23.439468
+Median agent execution: 4m 40s
+Input tokens: 36833348
+Cache tokens: 0
+Output tokens: 372072
+Results written to /home/xisun/InfraBench/infra-bench/jobs/opencode-qwen3.5-397b-a17b-fp8-onprem/result.json
+Run log: /home/xisun/InfraBench/infra-bench/jobs/opencode-qwen3.5-397b-a17b-fp8-onprem/run.log
+```
+
+Exception counts: `NonZeroAgentExitCodeError`=2, `ApiRateLimitError`=1,
+`NetworkConnectionError`=1.
+
+All 20 trials have structured `agent/trajectory.json` files and raw OpenCode
+event logs at `agent/opencode.txt`. The saved JSON artifacts were checked after
+the run, and gateway header values are redacted. Display metadata was normalized
+before documenting the result:
+`stats.evals=opencode__Qwen3.5-397B-A17B-FP8__infra-bench`, trial
+`agent_info.model_info.name=Qwen3.5-397B-A17B-FP8`, saved run config
+`config.agent.model_name=onprem/models/Qwen3.5-397B-A17B-FP8`, and provider
+catalog key `Qwen3.5-397B-A17B-FP8`.
+
+Scoreboard: **9/20 passed**.
+
+Harbor upload: private job `3ec1f3ce-0a1e-4974-bbc9-e54535b648cb`, uploaded
+with `harbor upload /home/xisun/InfraBench/infra-bench/jobs/opencode-qwen3.5-397b-a17b-fp8-onprem`
+on 2026-07-20. Hub URL:
+`https://hub.harborframework.com/jobs/3ec1f3ce-0a1e-4974-bbc9-e54535b648cb`.
+
+| Task | Reward | Trial | Trajectory/log | Exception |
+|---|---:|---|---|---|
+| `cute-layout-composition` | 0 | `cute-layout-composition__s3wTAsF` | `infra-bench/jobs/opencode-qwen3.5-397b-a17b-fp8-onprem/cute-layout-composition__s3wTAsF/agent/trajectory.json` |  |
+| `dwconv3d-occupancy` | 1 | `dwconv3d-occupancy__FxG6JYC` | `infra-bench/jobs/opencode-qwen3.5-397b-a17b-fp8-onprem/dwconv3d-occupancy__FxG6JYC/agent/trajectory.json` |  |
+| `engram-triton-kernel` | 1 | `engram-triton-kernel__C9Nd5Nu` | `infra-bench/jobs/opencode-qwen3.5-397b-a17b-fp8-onprem/engram-triton-kernel__C9Nd5Nu/agent/trajectory.json` |  |
+| `flydsl-cdna4-preshuffle-gemm` | 1 | `flydsl-cdna4-preshuffle-gemm__NWr8B5U` | `infra-bench/jobs/opencode-qwen3.5-397b-a17b-fp8-onprem/flydsl-cdna4-preshuffle-gemm__NWr8B5U/agent/trajectory.json` |  |
+| `gemm-fp8-ptpc-quant` | 0 | `gemm-fp8-ptpc-quant__3uavqBT` | `infra-bench/jobs/opencode-qwen3.5-397b-a17b-fp8-onprem/gemm-fp8-ptpc-quant__3uavqBT/agent/trajectory.json` |  |
+| `gemma4-gemm-tuning` | 0 | `gemma4-gemm-tuning__cMEydqh` | `infra-bench/jobs/opencode-qwen3.5-397b-a17b-fp8-onprem/gemma4-gemm-tuning__cMEydqh/agent/trajectory.json` |  |
+| `gemma4-sglang-serving-opt` | 0 | `gemma4-sglang-serving-opt__4kYRKja` | `infra-bench/jobs/opencode-qwen3.5-397b-a17b-fp8-onprem/gemma4-sglang-serving-opt__4kYRKja/agent/trajectory.json` |  |
+| `gluon-a8w8-mfma-att` | 1 | `gluon-a8w8-mfma-att__qWyA4Mw` | `infra-bench/jobs/opencode-qwen3.5-397b-a17b-fp8-onprem/gluon-a8w8-mfma-att__qWyA4Mw/agent/trajectory.json` |  |
+| `hello-rocm` | 1 | `hello-rocm__CyER34V` | `infra-bench/jobs/opencode-qwen3.5-397b-a17b-fp8-onprem/hello-rocm__CyER34V/agent/trajectory.json` |  |
+| `hotspot-analysis-torch-profiler` | 0 | `hotspot-analysis-torch-profiler__3UuBGA7` | `infra-bench/jobs/opencode-qwen3.5-397b-a17b-fp8-onprem/hotspot-analysis-torch-profiler__3UuBGA7/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+| `llm-fp8-quantize` | 0 | `llm-fp8-quantize__BBeVosa` | `infra-bench/jobs/opencode-qwen3.5-397b-a17b-fp8-onprem/llm-fp8-quantize__BBeVosa/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+| `llvm-simple-constant-propagation` | 1 | `llvm-simple-constant-propagation__gSjwC5j` | `infra-bench/jobs/opencode-qwen3.5-397b-a17b-fp8-onprem/llvm-simple-constant-propagation__gSjwC5j/agent/trajectory.json` |  |
+| `mem-bandwidth-bench` | 0 | `mem-bandwidth-bench__MFKuHGR` | `infra-bench/jobs/opencode-qwen3.5-397b-a17b-fp8-onprem/mem-bandwidth-bench__MFKuHGR/agent/trajectory.json` |  |
+| `paged-attention-hd256` | 0 | `paged-attention-hd256__qXEy22o` | `infra-bench/jobs/opencode-qwen3.5-397b-a17b-fp8-onprem/paged-attention-hd256__qXEy22o/agent/trajectory.json` |  |
+| `pointnet2-hipify` | 1 | `pointnet2-hipify__C6mRh7m` | `infra-bench/jobs/opencode-qwen3.5-397b-a17b-fp8-onprem/pointnet2-hipify__C6mRh7m/agent/trajectory.json` |  |
+| `qr-rmsnorm-fusion` | 0 | `qr-rmsnorm-fusion__dTJLwbR` | `infra-bench/jobs/opencode-qwen3.5-397b-a17b-fp8-onprem/qr-rmsnorm-fusion__dTJLwbR/agent/trajectory.json` |  |
+| `sglang-mmmu-ipc-crash` | 1 | `sglang-mmmu-ipc-crash__7mJpdM2` | `infra-bench/jobs/opencode-qwen3.5-397b-a17b-fp8-onprem/sglang-mmmu-ipc-crash__7mJpdM2/agent/trajectory.json` |  |
+| `sglang-sync-stall` | 1 | `sglang-sync-stall__JUmsEsW` | `infra-bench/jobs/opencode-qwen3.5-397b-a17b-fp8-onprem/sglang-sync-stall__JUmsEsW/agent/trajectory.json` | `ApiRateLimitError` |
+| `triton-matmul-tuning` | 0 | `triton-matmul-tuning__ptc5dmN` | `infra-bench/jobs/opencode-qwen3.5-397b-a17b-fp8-onprem/triton-matmul-tuning__ptc5dmN/agent/trajectory.json` |  |
+| `vllm-aiter-debug` | 0 | `vllm-aiter-debug__c2fbaYk` | `infra-bench/jobs/opencode-qwen3.5-397b-a17b-fp8-onprem/vllm-aiter-debug__c2fbaYk/agent/trajectory.json` | `NetworkConnectionError` |
+
+## Round 8 Results
+
+Run date: 2026-07-20
+
+Round 8 adds an on-prem OpenCode sweep for `MiMo-V2-Flash`. The model is served
+by SGLang from
+`/home/xisun/InfraBench/mimo-v2-flash-sgl/launch_sgl_mimo_v2_flash_server.sh` on
+another MI350 machine at `http://10.145.64.81:30000/v1`. SGLang advertises the
+model id `/models/MiMo-V2-Flash`, so OpenCode must request that exact served
+model id.
+
+Pricing was configured from the LiteLLM `openrouter/xiaomi/mimo-v2-flash`
+reference: `$0.10/M` input, `$0.30/M` output, and `$0.01/M` cache-read tokens.
+The completed smoke and full sweep both reported zero cache tokens.
+
+### Round 8 Smoke Test
+
+Smoke command:
+
+```bash
+JOB_NAME=smoke-opencode-mimo-v2-flash-onprem \
+  MODEL=/models/MiMo-V2-Flash \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://10.145.64.81:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  INFRABENCH_GPU_COUNT=6 \
+  ./run_open_code.sh -i hello-rocm
+```
+
+Smoke result summary:
+
+```text
+Trials: 1
+Exceptions: 0
+Reward 1.0: 1
+Reward 0.0: 0
+Cost USD: 0.002461
+Input tokens: 23693
+Cache tokens: 0
+Output tokens: 307
+Total runtime: 42s
+Results written to /home/xisun/InfraBench/infra-bench/jobs/smoke-opencode-mimo-v2-flash-onprem/result.json
+Run log: /home/xisun/InfraBench/infra-bench/jobs/smoke-opencode-mimo-v2-flash-onprem/run.log
+```
+
+### `MiMo-V2-Flash` via OpenCode On-Prem
+
+Full sweep command:
+
+```bash
+JOB_NAME=opencode-mimo-v2-flash-onprem \
+  MODEL=/models/MiMo-V2-Flash \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://10.145.64.81:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  INFRA_PARALLEL=4 \
+  INFRABENCH_GPU_COUNT=6 \
+  ./run_open_code.sh
+```
+
+Full result summary:
+
+```text
+Trials: 20
+Exceptions: 4
+Reward 1.0: 3
+Reward 0.0: 17
+Mean reward: 0.150
+Total runtime: 2h 15m 43s
+Cost USD: 15.651414
+Median agent execution: 3m 56s
+Input tokens: 155754490
+Cache tokens: 0
+Output tokens: 253215
+Results written to /home/xisun/InfraBench/infra-bench/jobs/opencode-mimo-v2-flash-onprem/result.json
+Run log: /home/xisun/InfraBench/infra-bench/jobs/opencode-mimo-v2-flash-onprem/run.log
+```
+
+Exception counts: `AgentTimeoutError`=3, `NonZeroAgentExitCodeError`=1.
+
+All 20 trials have structured `agent/trajectory.json` files and raw OpenCode
+event logs at `agent/opencode.txt`. The `engram-triton-kernel` trial uses a
+reconstructed partial trajectory because the OpenCode JSON stream ended before a
+complete `step_finish` event. The saved JSON artifacts were checked after the
+run, and the live gateway key is not present.
+
+Display metadata was normalized before documenting the result:
+`stats.evals=opencode__MiMo-V2-Flash__infra-bench`, trial
+`agent_info.model_info.name=MiMo-V2-Flash`, and saved run config
+`config.agent.model_name=onprem/models/MiMo-V2-Flash`. The on-prem provider
+config still includes the runtime `models/MiMo-V2-Flash` key so OpenCode can
+route to the served SGLang model id.
+
+Scoreboard: **3/20 passed**.
+
+Harbor upload: private job `736b9f10-f93d-4282-b2af-8924659430cd`, uploaded
+with `harbor upload /home/xisun/InfraBench/infra-bench/jobs/opencode-mimo-v2-flash-onprem`
+on 2026-07-20. Hub URL:
+`https://hub.harborframework.com/jobs/736b9f10-f93d-4282-b2af-8924659430cd`.
+
+| Task | Reward | Trial | Trajectory/log | Exception |
+|---|---:|---|---|---|
+| `cute-layout-composition` | 0 | `cute-layout-composition__DnyF38K` | `infra-bench/jobs/opencode-mimo-v2-flash-onprem/cute-layout-composition__DnyF38K/agent/trajectory.json` |  |
+| `dwconv3d-occupancy` | 0 | `dwconv3d-occupancy__jsh24bq` | `infra-bench/jobs/opencode-mimo-v2-flash-onprem/dwconv3d-occupancy__jsh24bq/agent/trajectory.json` |  |
+| `engram-triton-kernel` | 0 | `engram-triton-kernel__VaqJPF3` | `infra-bench/jobs/opencode-mimo-v2-flash-onprem/engram-triton-kernel__VaqJPF3/agent/trajectory.json` | `AgentTimeoutError` |
+| `flydsl-cdna4-preshuffle-gemm` | 0 | `flydsl-cdna4-preshuffle-gemm__RULXJhh` | `infra-bench/jobs/opencode-mimo-v2-flash-onprem/flydsl-cdna4-preshuffle-gemm__RULXJhh/agent/trajectory.json` |  |
+| `gemm-fp8-ptpc-quant` | 0 | `gemm-fp8-ptpc-quant__ZVV33Db` | `infra-bench/jobs/opencode-mimo-v2-flash-onprem/gemm-fp8-ptpc-quant__ZVV33Db/agent/trajectory.json` |  |
+| `gemma4-gemm-tuning` | 0 | `gemma4-gemm-tuning__Eo6utwm` | `infra-bench/jobs/opencode-mimo-v2-flash-onprem/gemma4-gemm-tuning__Eo6utwm/agent/trajectory.json` |  |
+| `gemma4-sglang-serving-opt` | 0 | `gemma4-sglang-serving-opt__VHpwMcF` | `infra-bench/jobs/opencode-mimo-v2-flash-onprem/gemma4-sglang-serving-opt__VHpwMcF/agent/trajectory.json` | `AgentTimeoutError` |
+| `gluon-a8w8-mfma-att` | 1 | `gluon-a8w8-mfma-att__t5rwo77` | `infra-bench/jobs/opencode-mimo-v2-flash-onprem/gluon-a8w8-mfma-att__t5rwo77/agent/trajectory.json` |  |
+| `hello-rocm` | 1 | `hello-rocm__8hPS88A` | `infra-bench/jobs/opencode-mimo-v2-flash-onprem/hello-rocm__8hPS88A/agent/trajectory.json` |  |
+| `hotspot-analysis-torch-profiler` | 0 | `hotspot-analysis-torch-profiler__AqqFfH9` | `infra-bench/jobs/opencode-mimo-v2-flash-onprem/hotspot-analysis-torch-profiler__AqqFfH9/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+| `llm-fp8-quantize` | 0 | `llm-fp8-quantize__X9PAV2d` | `infra-bench/jobs/opencode-mimo-v2-flash-onprem/llm-fp8-quantize__X9PAV2d/agent/trajectory.json` |  |
+| `llvm-simple-constant-propagation` | 0 | `llvm-simple-constant-propagation__G8rcjAp` | `infra-bench/jobs/opencode-mimo-v2-flash-onprem/llvm-simple-constant-propagation__G8rcjAp/agent/trajectory.json` |  |
+| `mem-bandwidth-bench` | 0 | `mem-bandwidth-bench__iNCtPqN` | `infra-bench/jobs/opencode-mimo-v2-flash-onprem/mem-bandwidth-bench__iNCtPqN/agent/trajectory.json` | `AgentTimeoutError` |
+| `paged-attention-hd256` | 0 | `paged-attention-hd256__JzbwhSr` | `infra-bench/jobs/opencode-mimo-v2-flash-onprem/paged-attention-hd256__JzbwhSr/agent/trajectory.json` |  |
+| `pointnet2-hipify` | 0 | `pointnet2-hipify__w8HVMcd` | `infra-bench/jobs/opencode-mimo-v2-flash-onprem/pointnet2-hipify__w8HVMcd/agent/trajectory.json` |  |
+| `qr-rmsnorm-fusion` | 0 | `qr-rmsnorm-fusion__Z2p5hmg` | `infra-bench/jobs/opencode-mimo-v2-flash-onprem/qr-rmsnorm-fusion__Z2p5hmg/agent/trajectory.json` |  |
+| `sglang-mmmu-ipc-crash` | 0 | `sglang-mmmu-ipc-crash__WnBDEsW` | `infra-bench/jobs/opencode-mimo-v2-flash-onprem/sglang-mmmu-ipc-crash__WnBDEsW/agent/trajectory.json` |  |
+| `sglang-sync-stall` | 0 | `sglang-sync-stall__Bt5cyUP` | `infra-bench/jobs/opencode-mimo-v2-flash-onprem/sglang-sync-stall__Bt5cyUP/agent/trajectory.json` |  |
+| `triton-matmul-tuning` | 1 | `triton-matmul-tuning__baacYnF` | `infra-bench/jobs/opencode-mimo-v2-flash-onprem/triton-matmul-tuning__baacYnF/agent/trajectory.json` |  |
+| `vllm-aiter-debug` | 0 | `vllm-aiter-debug__SSgnByY` | `infra-bench/jobs/opencode-mimo-v2-flash-onprem/vllm-aiter-debug__SSgnByY/agent/trajectory.json` |  |
