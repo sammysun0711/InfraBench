@@ -1,0 +1,72 @@
+
+[notice] A new release of pip is available: 26.1.1 -> 26.1.2
+[notice] To update, run: pip install --upgrade pip
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-8.4.1, pluggy-1.6.0
+rootdir: /tests
+plugins: hypothesis-6.155.0, json-ctrf-0.3.5
+collected 4 items
+
+../tests/test_outputs.py FFFF                                            [100%]
+
+=================================== FAILURES ===================================
+_____________________________ test_all_checks_pass _____________________________
+
+    def test_all_checks_pass():
+        d = _load()
+        failed = [f"{c['check']} ({c['why']})" for c in d["checks"] if not c["ok"]]
+>       assert not failed, "failed: " + "; ".join(failed)
+E       AssertionError: failed: load_modules (TypeError: Config.__init__() got an unexpected keyword argument 'matrix_instr_nonkdim'
+E         Traceback (most recent call last):
+E           File "/tests/grade_matmul.py", line 267, in main
+E             agent = _load_module(AGENT_PATH, "agent_matmul_tutorial")
+E                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/tests/grade_matmul.py", line 63, in _load_module
+E             spec.loader.exec_module(module)
+E           File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+E         TypeError: Config.__init__() got an unexpected keyword argument 'matrix_instr_nonkdim'
+E         )
+E       assert not ['load_modules (TypeError: Config.__init__() got an unexpected keyword argument \'matrix_instr_nonkdim\'\nTraceback (m...line 995, in exec_module\nTypeError: Config.__init__() got an unexpected keyword argument \'matrix_instr_nonkdim\'\n)']
+
+/tests/test_outputs.py:19: AssertionError
+_________________________ test_expected_checks_present _________________________
+
+    def test_expected_checks_present():
+        d = _load()
+        names = {c["check"] for c in d["checks"]}
+        assert "triton_version_fixed" in names, "Triton version check missing"
+>       assert "hip_autotune_config" in names, "static HIP autotune config check missing"
+E       AssertionError: static HIP autotune config check missing
+E       assert 'hip_autotune_config' in {'device_gfx950', 'import_runtime', 'load_modules', 'triton_version_fixed'}
+
+/tests/test_outputs.py:26: AssertionError
+________________________ test_benchmark_metrics_present ________________________
+
+    def test_benchmark_metrics_present():
+        d = _load()
+        metrics = d.get("metrics", {})
+        for key in ("untuned", "agent"):
+>           assert key in metrics, f"{key} benchmark metrics missing"
+E           AssertionError: untuned benchmark metrics missing
+E           assert 'untuned' in {}
+
+/tests/test_outputs.py:37: AssertionError
+_________________________ test_tuning_improves_latency _________________________
+
+    def test_tuning_improves_latency():
+        d = _load()
+        metrics = d.get("metrics", {})
+>       assert metrics["agent"]["total_us"] < metrics["untuned"]["total_us"], (
+               ^^^^^^^^^^^^^^^^
+            "tuned kernel did not improve latency "
+            f"(untuned {metrics['untuned']['total_us']}us, agent {metrics['agent']['total_us']}us)"
+        )
+E       KeyError: 'agent'
+
+/tests/test_outputs.py:44: KeyError
+=========================== short test summary info ============================
+FAILED ../tests/test_outputs.py::test_all_checks_pass - AssertionError: faile...
+FAILED ../tests/test_outputs.py::test_expected_checks_present - AssertionErro...
+FAILED ../tests/test_outputs.py::test_benchmark_metrics_present - AssertionEr...
+FAILED ../tests/test_outputs.py::test_tuning_improves_latency - KeyError: 'ag...
+============================== 4 failed in 0.29s ===============================

@@ -1,0 +1,142 @@
+{
+    "id": "b360a545-155d-4cef-8241-690a0f0a9f49",
+    "task_name": "infra-bench/sglang-mmmu-ipc-crash",
+    "trial_name": "sglang-mmmu-ipc-crash__aZ5eLik",
+    "trial_uri": "file:///home/xisun/InfraBench/infra-bench/jobs/opencode-gemini-3.5-flash/sglang-mmmu-ipc-crash__aZ5eLik",
+    "task_id": {
+        "path": "/tmp/tmp.liKE19fQ6O/infra-bench/sglang-mmmu-ipc-crash"
+    },
+    "source": "infra-bench",
+    "task_checksum": "532ac06e9f5dee61d80c08cfd93f945c569e95f0af60c4c3430e2b8ebbda25b7",
+    "config": {
+        "task": {
+            "path": "/tmp/tmp.liKE19fQ6O/infra-bench/sglang-mmmu-ipc-crash",
+            "git_url": null,
+            "git_commit_id": null,
+            "name": null,
+            "ref": null,
+            "overwrite": false,
+            "download_dir": null,
+            "source": "infra-bench"
+        },
+        "trial_name": "sglang-mmmu-ipc-crash__aZ5eLik",
+        "trials_dir": "/home/xisun/InfraBench/infra-bench/jobs/opencode-gemini-3.5-flash",
+        "install_only": false,
+        "timeout_multiplier": 1.0,
+        "agent_timeout_multiplier": null,
+        "verifier_timeout_multiplier": null,
+        "agent_setup_timeout_multiplier": 3.0,
+        "environment_build_timeout_multiplier": null,
+        "agent": {
+            "name": "opencode",
+            "import_path": null,
+            "model_name": "amd/gemini-3.5-flash",
+            "n_concurrent": null,
+            "concurrency_group": null,
+            "skills": [],
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "extra_allowed_hosts": [],
+            "kwargs": {
+                "opencode_config": {
+                    "provider": {
+                        "amd": {
+                            "npm": "@ai-sdk/openai-compatible",
+                            "name": "AMD LLM Gateway",
+                            "options": {
+                                "baseURL": "https://llm-api.amd.com/Unified/v1",
+                                "apiKey": "amd-gateway",
+                                "headers": {
+                                    "Ocp-Apim-Subscription-Key": "<REDACTED_GATEWAY_KEY>",
+                                    "ntid": "xisun"
+                                }
+                            },
+                            "models": {
+                                "gemini-3.5-flash": {
+                                    "cost": {
+                                        "input": 1.5,
+                                        "output": 9.0,
+                                        "cache_read": 0.15
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "mcp_servers": []
+        },
+        "environment": {
+            "type": "docker",
+            "import_path": null,
+            "force_build": false,
+            "delete": true,
+            "cpu_enforcement_policy": "auto",
+            "memory_enforcement_policy": "auto",
+            "override_cpus": null,
+            "override_memory_mb": null,
+            "override_storage_mb": null,
+            "override_gpus": null,
+            "override_tpu": null,
+            "mounts": null,
+            "extra_docker_compose": [],
+            "kwargs": {},
+            "extra_allowed_hosts": []
+        },
+        "verifier": {
+            "override_timeout_sec": null,
+            "max_timeout_sec": null,
+            "disable": false
+        },
+        "artifacts": [],
+        "extra_instruction_paths": [],
+        "job_id": "8365292f-6ea6-4968-9215-69f8574ddbaa"
+    },
+    "agent_info": {
+        "name": "opencode",
+        "version": "1.18.3",
+        "model_info": {
+            "name": "gemini-3.5-flash",
+            "provider": "amd"
+        }
+    },
+    "agent_result": {
+        "n_input_tokens": 47718,
+        "n_cache_tokens": 0,
+        "n_output_tokens": 326,
+        "cost_usd": 0.074511,
+        "rollout_details": null,
+        "metadata": null
+    },
+    "verifier_result": {
+        "rewards": {
+            "reward": 0.0
+        }
+    },
+    "exception_info": {
+        "exception_type": "NonZeroAgentExitCodeError",
+        "exception_message": "Command failed (exit 1): . ~/.nvm/nvm.sh; opencode --model=amd/gemini-3.5-flash run --format=json --thinking --dangerously-skip-permissions -- 'You are debugging a **crash in a multimodal LLM server**. An sglang server for\n**Qwen3.5-27B** (tensor-parallel across 2× AMD MI35X, CDNA4 / gfx950) crashes\nduring an **MMMU accuracy test** under concurrency.\n\n## Setup\n\nThe server is launched by `/app/launch_qwen3.5_27b_sglang.sh` (AITER on, CUDA IPC\nmultimodal transport on, triton attention, radix cache disabled, `--tp-size 2`).\nThe MMMU workload is `/app/run_mmmu.sh` (concurrency 128). A captured log from the\ncrashing run is at `/app/crash_qwen3.5-27b-mmmu-con128.log`.\n\n```bash\ncd /app\nbash launch_qwen3.5_27b_sglang.sh &   # wait for /health on :9080\nbash run_mmmu.sh                       # the MMMU workload\n```\n\n## The failure\n\nUnder concurrent multimodal load the scheduler dies with:\n\n```\nFailed to deserialize from CUDA IPC handle (HIP error: invalid device pointer\n  ... reconstruct_on_target_device (cuda_ipc_transport_utils.py)\ntorch.AcceleratorError: HIP error: invalid device pointer\nSIGQUIT received. ... It usually means one child failed.\n```\n\nThe multimodal image features are passed between processes over a **CUDA/HIP IPC\ntransport**. Under concurrency, the device buffer backing an IPC handle can be\nfreed/recycled on the sender before the receiver reconstructs the tensor from the\nhandle, so the receiver opens a **stale device pointer** and the scheduler\ncrashes.\n\n## What to do\n\n1. Diagnose the crash from the log and the serving configuration.\n2. **Fix the server configuration** so the multimodal server survives the MMMU\n   test — **without disabling the CUDA IPC multimodal transport** (the fix must\n   keep that optimization on, not turn it off).\n3. Write your analysis to **`/app/analysis.json`**:\n\n```json\n{\n  \"root_cause\": \"<what makes the CUDA IPC handle point at freed/recycled device memory under concurrency>\",\n  \"fix\": \"<the exact env var / setting you changed to fix it>\",\n  \"evidence\": \"<the log line(s) that identify the failure>\"\n}\n```\n\nYour fix must be reflected in `/app/launch_qwen3.5_27b_sglang.sh` (the grader\nlaunches **that script**).\n\n## How you are graded\n\nThe grader does **not** trust your description. It launches **your**\n`/app/launch_qwen3.5_27b_sglang.sh`, then:\n\n1. **analysis_present** — `/app/analysis.json` exists and parses.\n2. **launch_config_valid** — the running scheduler'\"'\"'s actual process environment\n   shows the CUDA IPC multimodal transport **still enabled** AND the IPC pool\n   handle cache **enabled** (read from the live process, not from the file).\n3. **server_healthy** — the server reaches `/health` = 200.\n4. **mmmu_benchmark_intact** — the MMMU benchmark source matches a build-time\n   snapshot (editing `bench_sglang.py` to fake accuracy fails here).\n5. **mmmu_accuracy** — the grader runs the MMMU benchmark itself (concurrency\n   128) and requires a real overall accuracy (> 0.28).\n6. **agent_identified_rootcause** — your `root_cause` names the correct root cause\n   and your `fix` names the setting you changed.\n\n## Hints\n\n- The relevant setting is a sglang environment variable that changes how opened\n  IPC handles are managed across reuse. Look at\n  `python/sglang/srt/utils/cuda_ipc_transport_utils.py` and\n  `python/sglang/srt/environ.py`.\n- Launch the server from `/app` (not `/sgl-workspace`) — the latter shadows the\n  installed `aiter` package on `sys.path`.\n\n## Notes\n\n- Two GPUs are pre-selected for this container (`HIP_VISIBLE_DEVICES` is set);\n  use both (`--tp-size 2`).\n- The model is at `/models/Qwen3.5-27B`; the server listens on port 9080.\n- Do not read `/tests`, hardcode grader values, or write\n  `/logs/verifier/reward.txt`.\n' 2>&1 </dev/null | stdbuf -oL tee /logs/agent/opencode.txt\nstdout: {\"type\":\"step_start\",\"timestamp\":1784416787873,\"sessionID\":\"ses_08878b6c6ffeR4A4b7vaDhPam3\",\"part\":{\"id\":\"prt_f77875d93001fixVcUf43wJ50w\",\"messageID\":\"msg_f77874a26001gkySWMmxaoR3tI\",\"sessionID\":\"ses_08878b6c6ffeR4A4b7vaDhPam3\",\"snapshot\":\"b71a2c4aac0de114faed4fbf01e944b2594f3a62\",\"type\":\"step-start\"}}\n{\"type\":\"tool_use\",\"timestamp\":1784416787873,\"sessionID\":\"ses_08878b6c6ffeR4A4b7vaDhPam3\",\"part\":{\"type\":\"tool\",\"tool\":\"todowrite\",\"callID\":\"call_04f94883def74256830||thought_signature||AY89a1/eYjhGh7F+PA5W9kN+opF+9+rkPy6p2d4U4myVJDiVtQJd/NaUu786/0G5Ef3tw9YQzszV2gyy74mFTtNzI1/BMUHGbbuhnl38P+O7f3XsW1jqZmik3a8ZJYzygwi2YqbyNFdNGrYGX/2at3tYtY/6YUkNlkXfdvEQ9l16uaEGdy1S87GOp8qjFltPg+Zh1EpbCxFNgcnolD5GZNOLEjuNXp/YtCs3CVCTRvO8urH1nRoqQlos5fi6urdEdWw798eUbRR1fOvWSjrSTZ2fghIX7EB+Q7QaUpYFUecv5835jdURm5Vfm7OKItI1LufqLrxbRT+NaQ3cR8i8gHT2wiPpIi2YPy8fyyrbWRlvesfEisyClBp+4ITpfSkdZbdWBfiXyA/fR60tlVUgcUZ9Ocf3UT0VvUCACg/J0IL1Y6seLdF0mway6ty7+gTdkYGwXy3xLQ7h6zggqrnJ/S0miHZiXA2K2ISFiy3XHsbJ5XSbl+8KzpKLrZuv65 ... [truncated]\nstderr: None",
+        "exception_traceback": "Traceback (most recent call last):\n  File \"/home/xisun/.local/share/uv/tools/harbor/lib/python3.13/site-packages/harbor/trial/single_step.py\", line 77, in _run_agent\n    await self._run_agent_phase(\n    ...<4 lines>...\n    )\n  File \"/home/xisun/.local/share/uv/tools/harbor/lib/python3.13/site-packages/harbor/trial/trial.py\", line 442, in _run_agent_phase\n    await asyncio.wait_for(\n    ...<6 lines>...\n    )\n  File \"/home/xisun/.local/share/uv/python/cpython-3.13.14-linux-x86_64-gnu/lib/python3.13/asyncio/tasks.py\", line 507, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/home/xisun/.local/share/uv/tools/harbor/lib/python3.13/site-packages/harbor/agents/installed/base.py\", line 105, in wrapper\n    return await fn(self, instruction, *args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/xisun/.local/share/uv/tools/harbor/lib/python3.13/site-packages/harbor/agents/installed/opencode.py\", line 548, in run\n    await self.exec_as_agent(\n    ...<8 lines>...\n    )\n  File \"/home/xisun/.local/share/uv/tools/harbor/lib/python3.13/site-packages/harbor/agents/installed/base.py\", line 477, in exec_as_agent\n    return await self._exec(\n           ^^^^^^^^^^^^^^^^^\n        environment, command, env=env, cwd=cwd, timeout_sec=timeout_sec\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    )\n    ^\n  File \"/home/xisun/.local/share/uv/tools/harbor/lib/python3.13/site-packages/harbor/agents/installed/base.py\", line 444, in _exec\n    raise self._classify_exec_error(command, result)\nharbor.agents.installed.base.NonZeroAgentExitCodeError: Command failed (exit 1): . ~/.nvm/nvm.sh; opencode --model=amd/gemini-3.5-flash run --format=json --thinking --dangerously-skip-permissions -- 'You are debugging a **crash in a multimodal LLM server**. An sglang server for\n**Qwen3.5-27B** (tensor-parallel across 2× AMD MI35X, CDNA4 / gfx950) crashes\nduring an **MMMU accuracy test** under concurrency.\n\n## Setup\n\nThe server is launched by `/app/launch_qwen3.5_27b_sglang.sh` (AITER on, CUDA IPC\nmultimodal transport on, triton attention, radix cache disabled, `--tp-size 2`).\nThe MMMU workload is `/app/run_mmmu.sh` (concurrency 128). A captured log from the\ncrashing run is at `/app/crash_qwen3.5-27b-mmmu-con128.log`.\n\n```bash\ncd /app\nbash launch_qwen3.5_27b_sglang.sh &   # wait for /health on :9080\nbash run_mmmu.sh                       # the MMMU workload\n```\n\n## The failure\n\nUnder concurrent multimodal load the scheduler dies with:\n\n```\nFailed to deserialize from CUDA IPC handle (HIP error: invalid device pointer\n  ... reconstruct_on_target_device (cuda_ipc_transport_utils.py)\ntorch.AcceleratorError: HIP error: invalid device pointer\nSIGQUIT received. ... It usually means one child failed.\n```\n\nThe multimodal image features are passed between processes over a **CUDA/HIP IPC\ntransport**. Under concurrency, the device buffer backing an IPC handle can be\nfreed/recycled on the sender before the receiver reconstructs the tensor from the\nhandle, so the receiver opens a **stale device pointer** and the scheduler\ncrashes.\n\n## What to do\n\n1. Diagnose the crash from the log and the serving configuration.\n2. **Fix the server configuration** so the multimodal server survives the MMMU\n   test — **without disabling the CUDA IPC multimodal transport** (the fix must\n   keep that optimization on, not turn it off).\n3. Write your analysis to **`/app/analysis.json`**:\n\n```json\n{\n  \"root_cause\": \"<what makes the CUDA IPC handle point at freed/recycled device memory under concurrency>\",\n  \"fix\": \"<the exact env var / setting you changed to fix it>\",\n  \"evidence\": \"<the log line(s) that identify the failure>\"\n}\n```\n\nYour fix must be reflected in `/app/launch_qwen3.5_27b_sglang.sh` (the grader\nlaunches **that script**).\n\n## How you are graded\n\nThe grader does **not** trust your description. It launches **your**\n`/app/launch_qwen3.5_27b_sglang.sh`, then:\n\n1. **analysis_present** — `/app/analysis.json` exists and parses.\n2. **launch_config_valid** — the running scheduler'\"'\"'s actual process environment\n   shows the CUDA IPC multimodal transport **still enabled** AND the IPC pool\n   handle cache **enabled** (read from the live process, not from the file).\n3. **server_healthy** — the server reaches `/health` = 200.\n4. **mmmu_benchmark_intact** — the MMMU benchmark source matches a build-time\n   snapshot (editing `bench_sglang.py` to fake accuracy fails here).\n5. **mmmu_accuracy** — the grader runs the MMMU benchmark itself (concurrency\n   128) and requires a real overall accuracy (> 0.28).\n6. **agent_identified_rootcause** — your `root_cause` names the correct root cause\n   and your `fix` names the setting you changed.\n\n## Hints\n\n- The relevant setting is a sglang environment variable that changes how opened\n  IPC handles are managed across reuse. Look at\n  `python/sglang/srt/utils/cuda_ipc_transport_utils.py` and\n  `python/sglang/srt/environ.py`.\n- Launch the server from `/app` (not `/sgl-workspace`) — the latter shadows the\n  installed `aiter` package on `sys.path`.\n\n## Notes\n\n- Two GPUs are pre-selected for this container (`HIP_VISIBLE_DEVICES` is set);\n  use both (`--tp-size 2`).\n- The model is at `/models/Qwen3.5-27B`; the server listens on port 9080.\n- Do not read `/tests`, hardcode grader values, or write\n  `/logs/verifier/reward.txt`.\n' 2>&1 </dev/null | stdbuf -oL tee /logs/agent/opencode.txt\nstdout: {\"type\":\"step_start\",\"timestamp\":1784416787873,\"sessionID\":\"ses_08878b6c6ffeR4A4b7vaDhPam3\",\"part\":{\"id\":\"prt_f77875d93001fixVcUf43wJ50w\",\"messageID\":\"msg_f77874a26001gkySWMmxaoR3tI\",\"sessionID\":\"ses_08878b6c6ffeR4A4b7vaDhPam3\",\"snapshot\":\"b71a2c4aac0de114faed4fbf01e944b2594f3a62\",\"type\":\"step-start\"}}\n{\"type\":\"tool_use\",\"timestamp\":1784416787873,\"sessionID\":\"ses_08878b6c6ffeR4A4b7vaDhPam3\",\"part\":{\"type\":\"tool\",\"tool\":\"todowrite\",\"callID\":\"call_04f94883def74256830||thought_signature||AY89a1/eYjhGh7F+PA5W9kN+opF+9+rkPy6p2d4U4myVJDiVtQJd/NaUu786/0G5Ef3tw9YQzszV2gyy74mFTtNzI1/BMUHGbbuhnl38P+O7f3XsW1jqZmik3a8ZJYzygwi2YqbyNFdNGrYGX/2at3tYtY/6YUkNlkXfdvEQ9l16uaEGdy1S87GOp8qjFltPg+Zh1EpbCxFNgcnolD5GZNOLEjuNXp/YtCs3CVCTRvO8urH1nRoqQlos5fi6urdEdWw798eUbRR1fOvWSjrSTZ2fghIX7EB+Q7QaUpYFUecv5835jdURm5Vfm7OKItI1LufqLrxbRT+NaQ3cR8i8gHT2wiPpIi2YPy8fyyrbWRlvesfEisyClBp+4ITpfSkdZbdWBfiXyA/fR60tlVUgcUZ9Ocf3UT0VvUCACg/J0IL1Y6seLdF0mway6ty7+gTdkYGwXy3xLQ7h6zggqrnJ/S0miHZiXA2K2ISFiy3XHsbJ5XSbl+8KzpKLrZuv65 ... [truncated]\nstderr: None\n",
+        "occurred_at": "2026-07-18T18:20:04.575867"
+    },
+    "started_at": "2026-07-18T23:19:21.948729Z",
+    "finished_at": "2026-07-18T23:24:24.326698Z",
+    "environment_setup": {
+        "started_at": "2026-07-18T23:19:21.949822Z",
+        "finished_at": "2026-07-18T23:19:23.199404Z"
+    },
+    "agent_setup": {
+        "started_at": "2026-07-18T23:19:23.199431Z",
+        "finished_at": "2026-07-18T23:19:41.706617Z"
+    },
+    "agent_execution": {
+        "started_at": "2026-07-18T23:19:41.706705Z",
+        "finished_at": "2026-07-18T23:20:04.575149Z"
+    },
+    "verifier": {
+        "started_at": "2026-07-18T23:20:04.797055Z",
+        "finished_at": "2026-07-18T23:24:12.087890Z"
+    },
+    "step_results": null
+}

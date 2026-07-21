@@ -1,0 +1,121 @@
+Skipping image OS validation for hb__4b73bf99d20cd718ec25fb1aa879da14: docker inspect returned 1
+Running command: apt-get update && apt-get install -y curl
+Command outputs captured
+Running command: set -euo pipefail; curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.2/install.sh | bash && export NVM_DIR="$HOME/.nvm" && \. "$NVM_DIR/nvm.sh" || true && command -v nvm &>/dev/null || { echo 'Error: NVM failed to load' >&2; exit 1; } && nvm install 22 && npm -v && npm i -g opencode-ai@latest && opencode --version
+Command outputs captured
+Running command: mkdir -p ~/.config/opencode && echo '{
+  "provider": {
+    "onprem": {
+      "models": {
+        "/models/MiniMax-M3": {
+          "cost": {
+            "input": 0.6,
+            "output": 2.4,
+            "cache_read": 0.12
+          }
+        }
+      },
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "AMD LLM Gateway",
+      "options": {
+        "baseURL": "http://10.145.64.81:30000/v1",
+        "apiKey": "amd-gateway",
+        "headers": {
+          "Ocp-Apim-Subscription-Key": "<REDACTED_GATEWAY_KEY>",
+          "ntid": "xisun"
+        }
+      }
+    }
+  }
+}' > ~/.config/opencode/opencode.json
+Command outputs captured
+Running command: . ~/.nvm/nvm.sh; opencode --model=onprem/models/MiniMax-M3 run --format=json --thinking --dangerously-skip-permissions -- 'You are debugging a **crash in a multimodal LLM server**. An sglang server for
+**Qwen3.5-27B** (tensor-parallel across 2× AMD MI35X, CDNA4 / gfx950) crashes
+during an **MMMU accuracy test** under concurrency.
+
+## Setup
+
+The server is launched by `/app/launch_qwen3.5_27b_sglang.sh` (AITER on, CUDA IPC
+multimodal transport on, triton attention, radix cache disabled, `--tp-size 2`).
+The MMMU workload is `/app/run_mmmu.sh` (concurrency 128). A captured log from the
+crashing run is at `/app/crash_qwen3.5-27b-mmmu-con128.log`.
+
+```bash
+cd /app
+bash launch_qwen3.5_27b_sglang.sh &   # wait for /health on :9080
+bash run_mmmu.sh                       # the MMMU workload
+```
+
+## The failure
+
+Under concurrent multimodal load the scheduler dies with:
+
+```
+Failed to deserialize from CUDA IPC handle (HIP error: invalid device pointer
+  ... reconstruct_on_target_device (cuda_ipc_transport_utils.py)
+torch.AcceleratorError: HIP error: invalid device pointer
+SIGQUIT received. ... It usually means one child failed.
+```
+
+The multimodal image features are passed between processes over a **CUDA/HIP IPC
+transport**. Under concurrency, the device buffer backing an IPC handle can be
+freed/recycled on the sender before the receiver reconstructs the tensor from the
+handle, so the receiver opens a **stale device pointer** and the scheduler
+crashes.
+
+## What to do
+
+1. Diagnose the crash from the log and the serving configuration.
+2. **Fix the server configuration** so the multimodal server survives the MMMU
+   test — **without disabling the CUDA IPC multimodal transport** (the fix must
+   keep that optimization on, not turn it off).
+3. Write your analysis to **`/app/analysis.json`**:
+
+```json
+{
+  "root_cause": "<what makes the CUDA IPC handle point at freed/recycled device memory under concurrency>",
+  "fix": "<the exact env var / setting you changed to fix it>",
+  "evidence": "<the log line(s) that identify the failure>"
+}
+```
+
+Your fix must be reflected in `/app/launch_qwen3.5_27b_sglang.sh` (the grader
+launches **that script**).
+
+## How you are graded
+
+The grader does **not** trust your description. It launches **your**
+`/app/launch_qwen3.5_27b_sglang.sh`, then:
+
+1. **analysis_present** — `/app/analysis.json` exists and parses.
+2. **launch_config_valid** — the running scheduler'"'"'s actual process environment
+   shows the CUDA IPC multimodal transport **still enabled** AND the IPC pool
+   handle cache **enabled** (read from the live process, not from the file).
+3. **server_healthy** — the server reaches `/health` = 200.
+4. **mmmu_benchmark_intact** — the MMMU benchmark source matches a build-time
+   snapshot (editing `bench_sglang.py` to fake accuracy fails here).
+5. **mmmu_accuracy** — the grader runs the MMMU benchmark itself (concurrency
+   128) and requires a real overall accuracy (> 0.28).
+6. **agent_identified_rootcause** — your `root_cause` names the correct root cause
+   and your `fix` names the setting you changed.
+
+## Hints
+
+- The relevant setting is a sglang environment variable that changes how opened
+  IPC handles are managed across reuse. Look at
+  `python/sglang/srt/utils/cuda_ipc_transport_utils.py` and
+  `python/sglang/srt/environ.py`.
+- Launch the server from `/app` (not `/sgl-workspace`) — the latter shadows the
+  installed `aiter` package on `sys.path`.
+
+## Notes
+
+- Two GPUs are pre-selected for this container (`HIP_VISIBLE_DEVICES` is set);
+  use both (`--tp-size 2`).
+- The model is at `/models/Qwen3.5-27B`; the server listens on port 9080.
+- Do not read `/tests`, hardcode grader values, or write
+  `/logs/verifier/reward.txt`.
+' 2>&1 </dev/null | stdbuf -oL tee /logs/agent/opencode.txt
+Command outputs captured
+Wrote opencode trajectory to /home/xisun/InfraBench/infra-bench/jobs/opencode-minimax-m3-onprem/sglang-mmmu-ipc-crash__L62bXT7/agent/trajectory.json
+Collecting main service artifacts

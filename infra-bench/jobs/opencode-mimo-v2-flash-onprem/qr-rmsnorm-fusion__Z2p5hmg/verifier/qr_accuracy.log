@@ -1,0 +1,399 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+__________ test_qr_all_reduce_rmsnorm_matches_torch_reference[dtype0] __________
+multiprocessing.pool.RemoteTraceback: 
+"""
+Traceback (most recent call last):
+  File "/app/aiter/aiter/jit/core.py", line 1516, in wrapper
+    raise ModuleNotFoundError("start rebuild")
+ModuleNotFoundError: start rebuild
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/multiprocessing/pool.py", line 125, in worker
+    result = (True, func(*args, **kwds))
+                    ^^^^^^^^^^^^^^^^^^^
+  File "/tests/test_quick_all_reduce_rmsnorm.py", line 47, in _qr_rmsnorm_worker
+    ptr = ops.init_custom_qr(rank, world_size, None)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/aiter/aiter/jit/utils/torch_guard.py", line 206, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/app/aiter/aiter/jit/core.py", line 1772, in custom_wrapper
+    return wrapper(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/aiter/aiter/jit/core.py", line 1571, in wrapper
+    module = get_module(md_name)
+             ^^^^^^^^^^^^^^^^^^^
+  File "/app/aiter/aiter/jit/core.py", line 655, in get_module
+    get_module_custom_op(md_name)
+  File "/app/aiter/aiter/jit/utils/torch_guard.py", line 290, in wrapper_custom
+    else getattr(torch.ops.aiter, f"{loadName}")(
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.12/site-packages/torch/_ops.py", line 1209, in __call__
+    return self._op(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/aiter/aiter/jit/utils/torch_guard.py", line 328, in outer_wrapper_dummy
+    wrapper(*args, **kwargs)
+  File "/app/aiter/aiter/jit/utils/torch_guard.py", line 206, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/app/aiter/aiter/jit/core.py", line 606, in get_module_custom_op
+    __mds[md_name] = importlib.import_module(f"{__package__}.{md_name}")
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1324, in _find_and_load_unlocked
+ModuleNotFoundError: No module named 'aiter.jit.module_quick_all_reduce'
+"""
+
+The above exception was the direct cause of the following exception:
+
+dtype = torch.float16
+
+    @pytest.mark.skipif(torch.cuda.device_count() < 2, reason="requires at least 2 GPUs")
+    @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+    def test_qr_all_reduce_rmsnorm_matches_torch_reference(dtype: torch.dtype):
+        world_size = 2
+        hidden_dim = 4096
+        tokens = 256
+        eps = 1e-6
+    
+        generator = torch.Generator().manual_seed(1234)
+        inputs = [
+            torch.randn((tokens, hidden_dim), dtype=dtype, generator=generator) * 0.1
+            for _ in range(world_size)
+        ]
+        residuals = [
+            torch.randn((tokens, hidden_dim), dtype=dtype, generator=generator) * 0.1
+            for _ in range(world_size)
+        ]
+        weight = torch.randn((hidden_dim,), dtype=dtype, generator=generator) * 0.1
+    
+        allreduced = torch.stack(inputs).sum(dim=0)
+        refs = [
+            _rmsnorm_reference(allreduced, residuals[rank], weight, eps)
+            for rank in range(world_size)
+        ]
+    
+        distributed_init_method = get_distributed_init_method(get_ip(), get_open_port())
+        ctx = mp.get_context("spawn")
+        with ctx.Pool(processes=world_size) as pool:
+            rets = [
+                pool.apply_async(
+                    _qr_rmsnorm_worker,
+                    args=(
+                        rank,
+                        world_size,
+                        inputs,
+                        residuals,
+                        weight,
+                        eps,
+                        distributed_init_method,
+                    ),
+                )
+                for rank in range(world_size)
+            ]
+>           results = [ret.get(timeout=120) for ret in rets]
+                       ^^^^^^^^^^^^^^^^^^^^
+
+/tests/test_quick_all_reduce_rmsnorm.py:128: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <multiprocessing.pool.ApplyResult object at 0x7f2431b08b00>
+timeout = 120
+
+    def get(self, timeout=None):
+        self.wait(timeout)
+        if not self.ready():
+            raise TimeoutError
+        if self._success:
+            return self._value
+        else:
+>           raise self._value
+E           ModuleNotFoundError: No module named 'aiter.jit.module_quick_all_reduce'
+
+/usr/lib/python3.12/multiprocessing/pool.py:774: ModuleNotFoundError
+----------------------------- Captured stderr call -----------------------------
+[aiter] WARNING: NUMA balancing is enabled, which may cause errors. It is recommended to disable NUMA balancing by running "sudo sh -c 'echo 0 > /proc/sys/kernel/numa_balancing'" for more details: https://rocm.docs.amd.com/en/latest/how-to/system-optimization/mi300x.html#disable-numa-auto-balancing
+[aiter] import [module_aiter_core] under /app/aiter/aiter/jit/module_aiter_core.so
+[aiter] WARNING: NUMA balancing is enabled, which may cause errors. It is recommended to disable NUMA balancing by running "sudo sh -c 'echo 0 > /proc/sys/kernel/numa_balancing'" for more details: https://rocm.docs.amd.com/en/latest/how-to/system-optimization/mi300x.html#disable-numa-auto-balancing
+[aiter] import [module_aiter_core] under /app/aiter/aiter/jit/module_aiter_core.so
+[aiter] [pid=25646 pname=SpawnPoolWorker-2] start build [module_quick_all_reduce] under /app/aiter/aiter/jit/build/module_quick_all_reduce
+[aiter] [pid=25645 pname=SpawnPoolWorker-1] waiting for baton release at /app/aiter/aiter/jit/build/lock_module_quick_all_reduce
+[aiter] Current hipcc not support: -mllvm -amdgpu-coerce-illegal-types=1, skip it.
+[aiter] [31mfailed jit build [module_quick_all_reduce][0m↓↓↓↓↓↓↓↓↓↓
+-->[History]: Traceback (most recent call last):
+-->  File "/app/aiter/aiter/jit/core.py", line 1516, in wrapper
+    raise ModuleNotFoundError("start rebuild")
+-->ModuleNotFound[31merror:[0m start rebuild
+-->
+During handling of the above exception, another exception occurred:
+
+-->Traceback (most recent call last):
+-->  File "/app/aiter/aiter/jit/utils/cpp_extension.py", line 1543, in _run_ninja_build
+    subprocess.run(
+-->  File "/usr/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+-->subprocess.CalledProcess[31merror:[0m Command '['ninja', '-v', '-j', '102']' returned non-zero exit status 1.
+-->
+The above exception was the direct cause of the following exception:
+
+-->Traceback (most recent call last):
+-->  File "/app/aiter/aiter/jit/core.py", line 985, in MainFunc
+    _jit_compile(
+-->  File "/app/aiter/aiter/jit/utils/cpp_extension.py", line 1289, in _jit_compile
+    _write_ninja_file_and_build_library(
+-->  File "/app/aiter/aiter/jit/utils/cpp_extension.py", line 1418, in _write_ninja_file_and_build_library
+    _run_ninja_build(
+-->  File "/app/aiter/aiter/jit/utils/cpp_extension.py", line 1560, in _run_ninja_build
+    raise RuntimeError(message) from e
+-->Runtime[31merror:[0m Error building extension 'module_quick_all_reduce': [1/3] /opt/rocm-7.2.4/bin/hipcc  -DWITH_HIP -D_GLIBCXX_USE_CXX11_ABI=1 -DTORCH_EXTENSION_NAME=module_quick_all_reduce -I/app/aiter/3rdparty/ck_helper -I/app/aiter/3rdparty/composable_kernel/include -I/app/aiter/3rdparty/composable_kernel/library/include -I/app/aiter/csrc/include -I/app/aiter/aiter/jit/build/module_quick_all_reduce/blob -I/app/aiter/csrc/include/torch -I/opt/venv/lib/python3.12/site-packages/pybind11/include -isystem /opt/rocm-7.2.4/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THC -isystem /opt/venv/lib/python3.12/site-packages/torch/include/TH -isystem /opt/venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THH -isystem /usr/include/python3.12 -fPIC -std=c++20 -O3 -std=c++20 -Wno-unknown-warning-option -DENABLE_CK=1 -DENABLE_ROPE_POSITIONS_INT32=0 -fPIC -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -DCUDA_HAS_FP16=1 -D__HIP_NO_HALF_OPERATORS__=1 -D__HIP_NO_HALF_CONVERSIONS__=1 -mcmodel=large -fno-unique-section-names -ffunction-sections -fdata-sections -fvisibility=hidden -fvisibility-inlines-hidden --offload-arch=native -DDLLVM_MAIN_REVISION=554785 -DENABLE_ROPE_POSITIONS_INT32=0 -DLEGACY_HIPBLAS_DIRECT -DTORCH_Float4_e2m1fn_x2 -DUSE_PROF_API=1 -D__Float4_e2m1fn_x2 -D__HIP_PLATFORM_AMD__=1 -D__HIP_PLATFORM_HCC__=1 -U__HIP_NO_HALF_CONVERSIONS__ -U__HIP_NO_HALF_OPERATORS__ -Wno-macro-redefined -Wno-missing-template-arg-list-after-template-kw -Wno-switch-bool -Wno-undefined-func-template -Wno-unused-result -Wno-vla-cxx-extension -fgpu-flush-denormals-to-zero -fno-offload-uniform-block -mllvm --amdgpu-kernarg-preload-count=16 -mllvm --lsr-drop-solution=1 -mllvm -amdgpu-early-inline-all=true -mllvm -amdgpu-function-calls=false -mllvm -enable-post-misched=0 -fno-gpu-rdc -c /app/aiter/csrc/kernels/quick_all_reduce.cu -o quick_all_reduce.cuda.o 
+FAILED: [code=1] quick_all_reduce.cuda.o 
+/opt/rocm-7.2.4/bin/hipcc  -DWITH_HIP -D_GLIBCXX_USE_CXX11_ABI=1 -DTORCH_EXTENSION_NAME=module_quick_all_reduce -I/app/aiter/3rdparty/ck_helper -I/app/aiter/3rdparty/composable_kernel/include -I/app/aiter/3rdparty/composable_kernel/library/include -I/app/aiter/csrc/include -I/app/aiter/aiter/jit/build/module_quick_all_reduce/blob -I/app/aiter/csrc/include/torch -I/opt/venv/lib/python3.12/site-packages/pybind11/include -isystem /opt/rocm-7.2.4/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THC -isystem /opt/venv/lib/python3.12/site-packages/torch/include/TH -isystem /opt/venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THH -isystem /usr/include/python3.12 -fPIC -std=c++20 -O3 -std=c++20 -Wno-unknown-warning-option -DENABLE_CK=1 -DENABLE_ROPE_POSITIONS_INT32=0 -fPIC -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -DCUDA_HAS_FP16=1 -D__HIP_NO_HALF_OPERATORS__=1 -D__HIP_NO_HALF_CONVERSIONS__=1 -mcmodel=large -fno-unique-section-names -ffunction-sections -fdata-sections -fvisibility=hidden -fvisibility-inlines-hidden --offload-arch=native -DDLLVM_MAIN_REVISION=554785 -DENABLE_ROPE_POSITIONS_INT32=0 -DLEGACY_HIPBLAS_DIRECT -DTORCH_Float4_e2m1fn_x2 -DUSE_PROF_API=1 -D__Float4_e2m1fn_x2 -D__HIP_PLATFORM_AMD__=1 -D__HIP_PLATFORM_HCC__=1 -U__HIP_NO_HALF_CONVERSIONS__ -U__HIP_NO_HALF_OPERATORS__ -Wno-macro-redefined -Wno-missing-template-arg-list-after-template-kw -Wno-switch-bool -Wno-undefined-func-template -Wno-unused-result -Wno-vla-cxx-extension -fgpu-flush-denormals-to-zero -fno-offload-uniform-block -mllvm --amdgpu-kernarg-preload-count=16 -mllvm --lsr-drop-solution=1 -mllvm -amdgpu-early-inline-all=true -mllvm -amdgpu-function-calls=false -mllvm -enable-post-misched=0 -fno-gpu-rdc -c /app/aiter/csrc/kernels/quick_all_reduce.cu -o quick_all_reduce.cuda.o 
+In file included from /app/aiter/csrc/kernels/quick_all_reduce.cu:9:
+/app/aiter/csrc/include/quick_all_reduce.cuh:11:10: fatal [31merror:[0m 'hip_math_functions.h' file not found
+   11 | #include <hip_math_functions.h>
+      |          ^~~~~~~~~~~~~~~~~~~~~~
+1 error generated when compiling for gfx950.
+failed to execute:/opt/rocm-7.2.4/lib/llvm/bin/clang++  --offload-arch=native  -DWITH_HIP -D_GLIBCXX_USE_CXX11_ABI=1 -DTORCH_EXTENSION_NAME=module_quick_all_reduce -I/app/aiter/3rdparty/ck_helper -I/app/aiter/3rdparty/composable_kernel/include -I/app/aiter/3rdparty/composable_kernel/library/include -I/app/aiter/csrc/include -I/app/aiter/aiter/jit/build/module_quick_all_reduce/blob -I/app/aiter/csrc/include/torch -I/opt/venv/lib/python3.12/site-packages/pybind11/include -isystem /opt/rocm-7.2.4/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THC -isystem /opt/venv/lib/python3.12/site-packages/torch/include/TH -isystem /opt/venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THH -isystem /usr/include/python3.12 -fPIC -std=c++20 -O3 -std=c++20 -Wno-unknown-warning-option -DENABLE_CK=1 -DENABLE_ROPE_POSITIONS_INT32=0 -fPIC -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -DCUDA_HAS_FP16=1 -D__HIP_NO_HALF_OPERATORS__=1 -D__HIP_NO_HALF_CONVERSIONS__=1 -mcmodel=large -fno-unique-section-names -ffunction-sections -fdata-sections -fvisibility=hidden -fvisibility-inlines-hidden -DDLLVM_MAIN_REVISION=554785 -DENABLE_ROPE_POSITIONS_INT32=0 -DLEGACY_HIPBLAS_DIRECT -DTORCH_Float4_e2m1fn_x2 -DUSE_PROF_API=1 -D__Float4_e2m1fn_x2 -D__HIP_PLATFORM_AMD__=1 -D__HIP_PLATFORM_HCC__=1 -U__HIP_NO_HALF_CONVERSIONS__ -U__HIP_NO_HALF_OPERATORS__ -Wno-macro-redefined -Wno-missing-template-arg-list-after-template-kw -Wno-switch-bool -Wno-undefined-func-template -Wno-unused-result -Wno-vla-cxx-extension -fgpu-flush-denormals-to-zero -fno-offload-uniform-block -mllvm --amdgpu-kernarg-preload-count=16 -mllvm --lsr-drop-solution=1 -mllvm -amdgpu-early-inline-all=true -mllvm -amdgpu-function-calls=false -mllvm -enable-post-misched=0 -fno-gpu-rdc -c -x hip /app/aiter/csrc/kernels/quick_all_reduce.cu -o "quick_all_reduce.cuda.o"
+[2/3] /opt/rocm-7.2.4/bin/hipcc  -DWITH_HIP -D_GLIBCXX_USE_CXX11_ABI=1 -DTORCH_EXTENSION_NAME=module_quick_all_reduce -I/app/aiter/3rdparty/ck_helper -I/app/aiter/3rdparty/composable_kernel/include -I/app/aiter/3rdparty/composable_kernel/library/include -I/app/aiter/csrc/include -I/app/aiter/aiter/jit/build/module_quick_all_reduce/blob -I/app/aiter/csrc/include/torch -I/opt/venv/lib/python3.12/site-packages/pybind11/include -isystem /opt/rocm-7.2.4/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THC -isystem /opt/venv/lib/python3.12/site-packages/torch/include/TH -isystem /opt/venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THH -isystem /usr/include/python3.12 -fPIC -std=c++20 -O3 -std=c++20 -Wno-unknown-warning-option -DENABLE_CK=1 -DENABLE_ROPE_POSITIONS_INT32=0 -fPIC -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -DCUDA_HAS_FP16=1 -D__HIP_NO_HALF_OPERATORS__=1 -D__HIP_NO_HALF_CONVERSIONS__=1 -mcmodel=large -fno-unique-section-names -ffunction-sections -fdata-sections -fvisibility=hidden -fvisibility-inlines-hidden --offload-arch=native -DDLLVM_MAIN_REVISION=554785 -DENABLE_ROPE_POSITIONS_INT32=0 -DLEGACY_HIPBLAS_DIRECT -DTORCH_Float4_e2m1fn_x2 -DUSE_PROF_API=1 -D__Float4_e2m1fn_x2 -D__HIP_PLATFORM_AMD__=1 -D__HIP_PLATFORM_HCC__=1 -U__HIP_NO_HALF_CONVERSIONS__ -U__HIP_NO_HALF_OPERATORS__ -Wno-macro-redefined -Wno-missing-template-arg-list-after-template-kw -Wno-switch-bool -Wno-undefined-func-template -Wno-unused-result -Wno-vla-cxx-extension -fgpu-flush-denormals-to-zero -fno-offload-uniform-block -mllvm --amdgpu-kernarg-preload-count=16 -mllvm --lsr-drop-solution=1 -mllvm -amdgpu-early-inline-all=true -mllvm -amdgpu-function-calls=false -mllvm -enable-post-misched=0 -fno-gpu-rdc -c /app/aiter/csrc/pybind/quick_all_reduce_pybind.cu -o quick_all_reduce_pybind.cuda.o 
+In file included from /app/aiter/csrc/pybind/quick_all_reduce_pybind.cu:3:
+In file included from /app/aiter/csrc/include/rocm_ops.hpp:5:
+/app/aiter/csrc/include/aiter_tensor.h:149:17: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  149 |                 hipFreeAsync(ptr, stream_);
+      |                 ^~~~~~~~~~~~~~~~~~~~~~~~~~
+/app/aiter/csrc/include/aiter_tensor.h:151:17: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  151 |                 hipFree(ptr);
+      |                 ^~~~~~~~~~~~
+/app/aiter/csrc/include/aiter_tensor.h:175:21: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  175 |                     hipFreeAsync(ptr, stream_);
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~
+/app/aiter/csrc/include/aiter_tensor.h:177:21: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  177 |                     hipFree(ptr);
+      |                     ^~~~~~~~~~~~
+4 warnings generated when compiling for gfx950.
+In file included from /app/aiter/csrc/pybind/quick_all_reduce_pybind.cu:3:
+In file included from /app/aiter/csrc/include/rocm_ops.hpp:5:
+/app/aiter/csrc/include/aiter_tensor.h:149:17: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  149 |                 hipFreeAsync(ptr, stream_);
+      |                 ^~~~~~~~~~~~~~~~~~~~~~~~~~
+/app/aiter/csrc/include/aiter_tensor.h:151:17: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  151 |                 hipFree(ptr);
+      |                 ^~~~~~~~~~~~
+/app/aiter/csrc/include/aiter_tensor.h:175:21: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  175 |                     hipFreeAsync(ptr, stream_);
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~
+/app/aiter/csrc/include/aiter_tensor.h:177:21: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  177 |                     hipFree(ptr);
+      |                     ^~~~~~~~~~~~
+4 warnings generated when compiling for host.
+ninja: build stopped: subcommand failed.
+
+[31mfailed jit build [module_quick_all_reduce][0m↑↑↑↑↑↑↑↑↑↑
+[aiter] [pid=25646 pname=SpawnPoolWorker-2] [32mfinish build [module_quick_all_reduce], cost 21.8s [0m
+__________ test_qr_all_reduce_rmsnorm_matches_torch_reference[dtype1] __________
+multiprocessing.pool.RemoteTraceback: 
+"""
+Traceback (most recent call last):
+  File "/app/aiter/aiter/jit/core.py", line 1516, in wrapper
+    raise ModuleNotFoundError("start rebuild")
+ModuleNotFoundError: start rebuild
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/multiprocessing/pool.py", line 125, in worker
+    result = (True, func(*args, **kwds))
+                    ^^^^^^^^^^^^^^^^^^^
+  File "/tests/test_quick_all_reduce_rmsnorm.py", line 47, in _qr_rmsnorm_worker
+    ptr = ops.init_custom_qr(rank, world_size, None)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/aiter/aiter/jit/utils/torch_guard.py", line 206, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/app/aiter/aiter/jit/core.py", line 1772, in custom_wrapper
+    return wrapper(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/aiter/aiter/jit/core.py", line 1571, in wrapper
+    module = get_module(md_name)
+             ^^^^^^^^^^^^^^^^^^^
+  File "/app/aiter/aiter/jit/core.py", line 655, in get_module
+    get_module_custom_op(md_name)
+  File "/app/aiter/aiter/jit/utils/torch_guard.py", line 290, in wrapper_custom
+    else getattr(torch.ops.aiter, f"{loadName}")(
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.12/site-packages/torch/_ops.py", line 1209, in __call__
+    return self._op(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/aiter/aiter/jit/utils/torch_guard.py", line 328, in outer_wrapper_dummy
+    wrapper(*args, **kwargs)
+  File "/app/aiter/aiter/jit/utils/torch_guard.py", line 206, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/app/aiter/aiter/jit/core.py", line 606, in get_module_custom_op
+    __mds[md_name] = importlib.import_module(f"{__package__}.{md_name}")
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1324, in _find_and_load_unlocked
+ModuleNotFoundError: No module named 'aiter.jit.module_quick_all_reduce'
+"""
+
+The above exception was the direct cause of the following exception:
+
+dtype = torch.bfloat16
+
+    @pytest.mark.skipif(torch.cuda.device_count() < 2, reason="requires at least 2 GPUs")
+    @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+    def test_qr_all_reduce_rmsnorm_matches_torch_reference(dtype: torch.dtype):
+        world_size = 2
+        hidden_dim = 4096
+        tokens = 256
+        eps = 1e-6
+    
+        generator = torch.Generator().manual_seed(1234)
+        inputs = [
+            torch.randn((tokens, hidden_dim), dtype=dtype, generator=generator) * 0.1
+            for _ in range(world_size)
+        ]
+        residuals = [
+            torch.randn((tokens, hidden_dim), dtype=dtype, generator=generator) * 0.1
+            for _ in range(world_size)
+        ]
+        weight = torch.randn((hidden_dim,), dtype=dtype, generator=generator) * 0.1
+    
+        allreduced = torch.stack(inputs).sum(dim=0)
+        refs = [
+            _rmsnorm_reference(allreduced, residuals[rank], weight, eps)
+            for rank in range(world_size)
+        ]
+    
+        distributed_init_method = get_distributed_init_method(get_ip(), get_open_port())
+        ctx = mp.get_context("spawn")
+        with ctx.Pool(processes=world_size) as pool:
+            rets = [
+                pool.apply_async(
+                    _qr_rmsnorm_worker,
+                    args=(
+                        rank,
+                        world_size,
+                        inputs,
+                        residuals,
+                        weight,
+                        eps,
+                        distributed_init_method,
+                    ),
+                )
+                for rank in range(world_size)
+            ]
+>           results = [ret.get(timeout=120) for ret in rets]
+                       ^^^^^^^^^^^^^^^^^^^^
+
+/tests/test_quick_all_reduce_rmsnorm.py:128: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <multiprocessing.pool.ApplyResult object at 0x7f2431b7f350>
+timeout = 120
+
+    def get(self, timeout=None):
+        self.wait(timeout)
+        if not self.ready():
+            raise TimeoutError
+        if self._success:
+            return self._value
+        else:
+>           raise self._value
+E           ModuleNotFoundError: No module named 'aiter.jit.module_quick_all_reduce'
+
+/usr/lib/python3.12/multiprocessing/pool.py:774: ModuleNotFoundError
+----------------------------- Captured stderr call -----------------------------
+[aiter] WARNING: NUMA balancing is enabled, which may cause errors. It is recommended to disable NUMA balancing by running "sudo sh -c 'echo 0 > /proc/sys/kernel/numa_balancing'" for more details: https://rocm.docs.amd.com/en/latest/how-to/system-optimization/mi300x.html#disable-numa-auto-balancing
+[aiter] import [module_aiter_core] under /app/aiter/aiter/jit/module_aiter_core.so
+[aiter] WARNING: NUMA balancing is enabled, which may cause errors. It is recommended to disable NUMA balancing by running "sudo sh -c 'echo 0 > /proc/sys/kernel/numa_balancing'" for more details: https://rocm.docs.amd.com/en/latest/how-to/system-optimization/mi300x.html#disable-numa-auto-balancing
+[aiter] import [module_aiter_core] under /app/aiter/aiter/jit/module_aiter_core.so
+[aiter] [pid=26259 pname=SpawnPoolWorker-4] start build [module_quick_all_reduce] under /app/aiter/aiter/jit/build/module_quick_all_reduce
+[aiter] [pid=26258 pname=SpawnPoolWorker-3] waiting for baton release at /app/aiter/aiter/jit/build/lock_module_quick_all_reduce
+[aiter] Current hipcc not support: -mllvm -amdgpu-coerce-illegal-types=1, skip it.
+[aiter] [31mfailed jit build [module_quick_all_reduce][0m↓↓↓↓↓↓↓↓↓↓
+-->[History]: Traceback (most recent call last):
+-->  File "/app/aiter/aiter/jit/core.py", line 1516, in wrapper
+    raise ModuleNotFoundError("start rebuild")
+-->ModuleNotFound[31merror:[0m start rebuild
+-->
+During handling of the above exception, another exception occurred:
+
+-->Traceback (most recent call last):
+-->  File "/app/aiter/aiter/jit/utils/cpp_extension.py", line 1543, in _run_ninja_build
+    subprocess.run(
+-->  File "/usr/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+-->subprocess.CalledProcess[31merror:[0m Command '['ninja', '-v', '-j', '102']' returned non-zero exit status 1.
+-->
+The above exception was the direct cause of the following exception:
+
+-->Traceback (most recent call last):
+-->  File "/app/aiter/aiter/jit/core.py", line 985, in MainFunc
+    _jit_compile(
+-->  File "/app/aiter/aiter/jit/utils/cpp_extension.py", line 1289, in _jit_compile
+    _write_ninja_file_and_build_library(
+-->  File "/app/aiter/aiter/jit/utils/cpp_extension.py", line 1418, in _write_ninja_file_and_build_library
+    _run_ninja_build(
+-->  File "/app/aiter/aiter/jit/utils/cpp_extension.py", line 1560, in _run_ninja_build
+    raise RuntimeError(message) from e
+-->Runtime[31merror:[0m Error building extension 'module_quick_all_reduce': [1/3] /opt/rocm-7.2.4/bin/hipcc  -DWITH_HIP -D_GLIBCXX_USE_CXX11_ABI=1 -DTORCH_EXTENSION_NAME=module_quick_all_reduce -I/app/aiter/3rdparty/ck_helper -I/app/aiter/3rdparty/composable_kernel/include -I/app/aiter/3rdparty/composable_kernel/library/include -I/app/aiter/csrc/include -I/app/aiter/aiter/jit/build/module_quick_all_reduce/blob -I/app/aiter/csrc/include/torch -I/opt/venv/lib/python3.12/site-packages/pybind11/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THC -isystem /opt/venv/lib/python3.12/site-packages/torch/include/TH -isystem /opt/venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -isystem /opt/rocm-7.2.4/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THH -isystem /usr/include/python3.12 -fPIC -std=c++20 -O3 -std=c++20 -Wno-unknown-warning-option -DENABLE_CK=1 -DENABLE_ROPE_POSITIONS_INT32=0 -fPIC -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -DCUDA_HAS_FP16=1 -D__HIP_NO_HALF_OPERATORS__=1 -D__HIP_NO_HALF_CONVERSIONS__=1 -mcmodel=large -fno-unique-section-names -ffunction-sections -fdata-sections -fvisibility=hidden -fvisibility-inlines-hidden --offload-arch=native -DDLLVM_MAIN_REVISION=554785 -DENABLE_ROPE_POSITIONS_INT32=0 -DLEGACY_HIPBLAS_DIRECT -DTORCH_Float4_e2m1fn_x2 -DUSE_PROF_API=1 -D__Float4_e2m1fn_x2 -D__HIP_PLATFORM_AMD__=1 -D__HIP_PLATFORM_HCC__=1 -U__HIP_NO_HALF_CONVERSIONS__ -U__HIP_NO_HALF_OPERATORS__ -Wno-macro-redefined -Wno-missing-template-arg-list-after-template-kw -Wno-switch-bool -Wno-undefined-func-template -Wno-unused-result -Wno-vla-cxx-extension -fgpu-flush-denormals-to-zero -fno-offload-uniform-block -mllvm --amdgpu-kernarg-preload-count=16 -mllvm --lsr-drop-solution=1 -mllvm -amdgpu-early-inline-all=true -mllvm -amdgpu-function-calls=false -mllvm -enable-post-misched=0 -fno-gpu-rdc -c /app/aiter/csrc/kernels/quick_all_reduce.cu -o quick_all_reduce.cuda.o 
+FAILED: [code=1] quick_all_reduce.cuda.o 
+/opt/rocm-7.2.4/bin/hipcc  -DWITH_HIP -D_GLIBCXX_USE_CXX11_ABI=1 -DTORCH_EXTENSION_NAME=module_quick_all_reduce -I/app/aiter/3rdparty/ck_helper -I/app/aiter/3rdparty/composable_kernel/include -I/app/aiter/3rdparty/composable_kernel/library/include -I/app/aiter/csrc/include -I/app/aiter/aiter/jit/build/module_quick_all_reduce/blob -I/app/aiter/csrc/include/torch -I/opt/venv/lib/python3.12/site-packages/pybind11/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THC -isystem /opt/venv/lib/python3.12/site-packages/torch/include/TH -isystem /opt/venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -isystem /opt/rocm-7.2.4/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THH -isystem /usr/include/python3.12 -fPIC -std=c++20 -O3 -std=c++20 -Wno-unknown-warning-option -DENABLE_CK=1 -DENABLE_ROPE_POSITIONS_INT32=0 -fPIC -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -DCUDA_HAS_FP16=1 -D__HIP_NO_HALF_OPERATORS__=1 -D__HIP_NO_HALF_CONVERSIONS__=1 -mcmodel=large -fno-unique-section-names -ffunction-sections -fdata-sections -fvisibility=hidden -fvisibility-inlines-hidden --offload-arch=native -DDLLVM_MAIN_REVISION=554785 -DENABLE_ROPE_POSITIONS_INT32=0 -DLEGACY_HIPBLAS_DIRECT -DTORCH_Float4_e2m1fn_x2 -DUSE_PROF_API=1 -D__Float4_e2m1fn_x2 -D__HIP_PLATFORM_AMD__=1 -D__HIP_PLATFORM_HCC__=1 -U__HIP_NO_HALF_CONVERSIONS__ -U__HIP_NO_HALF_OPERATORS__ -Wno-macro-redefined -Wno-missing-template-arg-list-after-template-kw -Wno-switch-bool -Wno-undefined-func-template -Wno-unused-result -Wno-vla-cxx-extension -fgpu-flush-denormals-to-zero -fno-offload-uniform-block -mllvm --amdgpu-kernarg-preload-count=16 -mllvm --lsr-drop-solution=1 -mllvm -amdgpu-early-inline-all=true -mllvm -amdgpu-function-calls=false -mllvm -enable-post-misched=0 -fno-gpu-rdc -c /app/aiter/csrc/kernels/quick_all_reduce.cu -o quick_all_reduce.cuda.o 
+In file included from /app/aiter/csrc/kernels/quick_all_reduce.cu:9:
+/app/aiter/csrc/include/quick_all_reduce.cuh:11:10: fatal [31merror:[0m 'hip_math_functions.h' file not found
+   11 | #include <hip_math_functions.h>
+      |          ^~~~~~~~~~~~~~~~~~~~~~
+1 error generated when compiling for gfx950.
+failed to execute:/opt/rocm-7.2.4/lib/llvm/bin/clang++  --offload-arch=native  -DWITH_HIP -D_GLIBCXX_USE_CXX11_ABI=1 -DTORCH_EXTENSION_NAME=module_quick_all_reduce -I/app/aiter/3rdparty/ck_helper -I/app/aiter/3rdparty/composable_kernel/include -I/app/aiter/3rdparty/composable_kernel/library/include -I/app/aiter/csrc/include -I/app/aiter/aiter/jit/build/module_quick_all_reduce/blob -I/app/aiter/csrc/include/torch -I/opt/venv/lib/python3.12/site-packages/pybind11/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THC -isystem /opt/venv/lib/python3.12/site-packages/torch/include/TH -isystem /opt/venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -isystem /opt/rocm-7.2.4/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THH -isystem /usr/include/python3.12 -fPIC -std=c++20 -O3 -std=c++20 -Wno-unknown-warning-option -DENABLE_CK=1 -DENABLE_ROPE_POSITIONS_INT32=0 -fPIC -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -DCUDA_HAS_FP16=1 -D__HIP_NO_HALF_OPERATORS__=1 -D__HIP_NO_HALF_CONVERSIONS__=1 -mcmodel=large -fno-unique-section-names -ffunction-sections -fdata-sections -fvisibility=hidden -fvisibility-inlines-hidden -DDLLVM_MAIN_REVISION=554785 -DENABLE_ROPE_POSITIONS_INT32=0 -DLEGACY_HIPBLAS_DIRECT -DTORCH_Float4_e2m1fn_x2 -DUSE_PROF_API=1 -D__Float4_e2m1fn_x2 -D__HIP_PLATFORM_AMD__=1 -D__HIP_PLATFORM_HCC__=1 -U__HIP_NO_HALF_CONVERSIONS__ -U__HIP_NO_HALF_OPERATORS__ -Wno-macro-redefined -Wno-missing-template-arg-list-after-template-kw -Wno-switch-bool -Wno-undefined-func-template -Wno-unused-result -Wno-vla-cxx-extension -fgpu-flush-denormals-to-zero -fno-offload-uniform-block -mllvm --amdgpu-kernarg-preload-count=16 -mllvm --lsr-drop-solution=1 -mllvm -amdgpu-early-inline-all=true -mllvm -amdgpu-function-calls=false -mllvm -enable-post-misched=0 -fno-gpu-rdc -c -x hip /app/aiter/csrc/kernels/quick_all_reduce.cu -o "quick_all_reduce.cuda.o"
+[2/3] /opt/rocm-7.2.4/bin/hipcc  -DWITH_HIP -D_GLIBCXX_USE_CXX11_ABI=1 -DTORCH_EXTENSION_NAME=module_quick_all_reduce -I/app/aiter/3rdparty/ck_helper -I/app/aiter/3rdparty/composable_kernel/include -I/app/aiter/3rdparty/composable_kernel/library/include -I/app/aiter/csrc/include -I/app/aiter/aiter/jit/build/module_quick_all_reduce/blob -I/app/aiter/csrc/include/torch -I/opt/venv/lib/python3.12/site-packages/pybind11/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THC -isystem /opt/venv/lib/python3.12/site-packages/torch/include/TH -isystem /opt/venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -isystem /opt/rocm-7.2.4/include -isystem /opt/venv/lib/python3.12/site-packages/torch/include/THH -isystem /usr/include/python3.12 -fPIC -std=c++20 -O3 -std=c++20 -Wno-unknown-warning-option -DENABLE_CK=1 -DENABLE_ROPE_POSITIONS_INT32=0 -fPIC -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -DCUDA_HAS_FP16=1 -D__HIP_NO_HALF_OPERATORS__=1 -D__HIP_NO_HALF_CONVERSIONS__=1 -mcmodel=large -fno-unique-section-names -ffunction-sections -fdata-sections -fvisibility=hidden -fvisibility-inlines-hidden --offload-arch=native -DDLLVM_MAIN_REVISION=554785 -DENABLE_ROPE_POSITIONS_INT32=0 -DLEGACY_HIPBLAS_DIRECT -DTORCH_Float4_e2m1fn_x2 -DUSE_PROF_API=1 -D__Float4_e2m1fn_x2 -D__HIP_PLATFORM_AMD__=1 -D__HIP_PLATFORM_HCC__=1 -U__HIP_NO_HALF_CONVERSIONS__ -U__HIP_NO_HALF_OPERATORS__ -Wno-macro-redefined -Wno-missing-template-arg-list-after-template-kw -Wno-switch-bool -Wno-undefined-func-template -Wno-unused-result -Wno-vla-cxx-extension -fgpu-flush-denormals-to-zero -fno-offload-uniform-block -mllvm --amdgpu-kernarg-preload-count=16 -mllvm --lsr-drop-solution=1 -mllvm -amdgpu-early-inline-all=true -mllvm -amdgpu-function-calls=false -mllvm -enable-post-misched=0 -fno-gpu-rdc -c /app/aiter/csrc/pybind/quick_all_reduce_pybind.cu -o quick_all_reduce_pybind.cuda.o 
+In file included from /app/aiter/csrc/pybind/quick_all_reduce_pybind.cu:3:
+In file included from /app/aiter/csrc/include/rocm_ops.hpp:5:
+/app/aiter/csrc/include/aiter_tensor.h:149:17: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  149 |                 hipFreeAsync(ptr, stream_);
+      |                 ^~~~~~~~~~~~~~~~~~~~~~~~~~
+/app/aiter/csrc/include/aiter_tensor.h:151:17: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  151 |                 hipFree(ptr);
+      |                 ^~~~~~~~~~~~
+/app/aiter/csrc/include/aiter_tensor.h:175:21: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  175 |                     hipFreeAsync(ptr, stream_);
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~
+/app/aiter/csrc/include/aiter_tensor.h:177:21: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  177 |                     hipFree(ptr);
+      |                     ^~~~~~~~~~~~
+4 warnings generated when compiling for gfx950.
+In file included from /app/aiter/csrc/pybind/quick_all_reduce_pybind.cu:3:
+In file included from /app/aiter/csrc/include/rocm_ops.hpp:5:
+/app/aiter/csrc/include/aiter_tensor.h:149:17: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  149 |                 hipFreeAsync(ptr, stream_);
+      |                 ^~~~~~~~~~~~~~~~~~~~~~~~~~
+/app/aiter/csrc/include/aiter_tensor.h:151:17: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  151 |                 hipFree(ptr);
+      |                 ^~~~~~~~~~~~
+/app/aiter/csrc/include/aiter_tensor.h:175:21: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  175 |                     hipFreeAsync(ptr, stream_);
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~
+/app/aiter/csrc/include/aiter_tensor.h:177:21: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+  177 |                     hipFree(ptr);
+      |                     ^~~~~~~~~~~~
+4 warnings generated when compiling for host.
+ninja: build stopped: subcommand failed.
+
+[31mfailed jit build [module_quick_all_reduce][0m↑↑↑↑↑↑↑↑↑↑
+[aiter] [pid=26259 pname=SpawnPoolWorker-4] [32mfinish build [module_quick_all_reduce], cost 21.5s [0m
+=========================== short test summary info ============================
+FAILED ../../tests/test_quick_all_reduce_rmsnorm.py::test_qr_all_reduce_rmsnorm_matches_torch_reference[dtype0]
+FAILED ../../tests/test_quick_all_reduce_rmsnorm.py::test_qr_all_reduce_rmsnorm_matches_torch_reference[dtype1]
+2 failed in 64.31s (0:01:04)
+

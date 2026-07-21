@@ -1,0 +1,97 @@
+Traceback (most recent call last):
+  File "/home/xisun/.local/share/uv/tools/harbor/lib/python3.13/site-packages/harbor/trial/single_step.py", line 77, in _run_agent
+    await self._run_agent_phase(
+    ...<4 lines>...
+    )
+  File "/home/xisun/.local/share/uv/tools/harbor/lib/python3.13/site-packages/harbor/trial/trial.py", line 442, in _run_agent_phase
+    await asyncio.wait_for(
+    ...<6 lines>...
+    )
+  File "/home/xisun/.local/share/uv/python/cpython-3.13.14-linux-x86_64-gnu/lib/python3.13/asyncio/tasks.py", line 507, in wait_for
+    return await fut
+           ^^^^^^^^^
+  File "/home/xisun/.local/share/uv/tools/harbor/lib/python3.13/site-packages/harbor/agents/installed/base.py", line 105, in wrapper
+    return await fn(self, instruction, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/xisun/.local/share/uv/tools/harbor/lib/python3.13/site-packages/harbor/agents/installed/claude_code.py", line 1441, in run
+    await self.exec_as_agent(
+    ...<9 lines>...
+    )
+  File "/home/xisun/.local/share/uv/tools/harbor/lib/python3.13/site-packages/harbor/agents/installed/base.py", line 477, in exec_as_agent
+    return await self._exec(
+           ^^^^^^^^^^^^^^^^^
+        environment, command, env=env, cwd=cwd, timeout_sec=timeout_sec
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/xisun/.local/share/uv/tools/harbor/lib/python3.13/site-packages/harbor/agents/installed/base.py", line 444, in _exec
+    raise self._classify_exec_error(command, result)
+harbor.agents.installed.base.NonZeroAgentExitCodeError: Command failed (exit 143): export PATH="$HOME/.local/bin:$PATH"; claude --verbose --output-format=stream-json --permission-mode=bypassPermissions --print -- 'You are optimizing LLM inference serving on an AMD MI350 GPU. An sglang server
+for `google/gemma-4-26B-A4B-it` (a Mixture-of-Experts model) is served from this
+machine, but its throughput is leaving performance on the table.
+
+Your goal: **improve serving throughput and time-to-first-token (TTFT) while
+keeping model accuracy essentially unchanged.**
+
+## What you can change
+
+sglang is installed as an **editable** package — its source lives at
+`/sgl-workspace/sglang/python/sglang/` and your edits take effect the next time
+the server launches. You may modify the sglang source code (kernels, MoE
+routing/runner selection, GEMM/attention backends, weight processing, kernel
+fusion, etc.). Investigate where time is spent and where the stack falls back to
+slower code paths on this model + hardware.
+
+Analyze the optimization potential including, but not limited to:
+- Attention backend selection
+- Mixture-of-Experts (MoE) execution / runner backend
+- GEMM configuration and tuning
+- Kernel fusion
+
+## Hard constraints — the verifier uses a FIXED setup
+
+The verifier launches the server with EXACTLY this command (you must make your
+optimization active under it — you may NOT rely on extra launch flags or private
+environment variables the verifier will not set):
+
+```
+python -m sglang.launch_server \
+  --model /models/gemma-4-26B-A4B-it \
+  --disable-radix-cache \
+  --host 0.0.0.0 --port 30000
+```
+
+The verifier measures throughput and TTFT with EXACTLY this benchmark:
+
+```
+python3 -m sglang.bench_serving --backend sglang --dataset-name random \
+  --num-prompt 128 --max-concurrency 8 --port 30000 \
+  --random-input-len 8192 --random-output-len 1024 --random-range-ratio 1.0
+```
+
+and accuracy with:
+
+```
+sgl-eval run gsm8k --base-url http://localhost:30000/v1 --num-examples 200
+```
+
+## Success criteria
+
+The verifier first measures a BASELINE using the pristine (unmodified) sglang,
+then measures YOUR modified sglang, both with the commands above. To pass, your
+version must achieve ALL of:
+
+- **TTFT improvement > 10%** (lower mean TTFT is better)
+- **Total token throughput improvement > 2%**
+- **GSM8K accuracy ≥ 0.955** (must not regress correctness)
+
+Your changes must be real optimizations that preserve model outputs — degrading
+accuracy to gain speed will fail the accuracy gate.
+
+Notes:
+- The model is already downloaded at `/models/gemma-4-26B-A4B-it` (read-only).
+- The GPU assigned to this container is pre-selected; just use the default device.
+- Leave your changes in the sglang source tree; do not add launch flags.
+' 2>&1 </dev/null | tee /logs/agent/claude-code.txt
+stdout: {"type":"system","subtype":"init","cwd":"/app","session_id":"6c00f995-8633-4cb5-95e8-33a68b262772","tools":["Task","Bash","CronCreate","CronDelete","CronList","Edit","EnterWorktree","ExitWorktree","NotebookEdit","Read","ReportFindings","ScheduleWakeup","SendMessage","Skill","TaskCreate","TaskGet","TaskList","TaskOutput","TaskStop","TaskUpdate","WebFetch","WebSearch","Workflow","Write"],"mcp_servers":[],"model":"claude-opus-4.6","permissionMode":"bypassPermissions","slash_commands":["deep-research","dataviz","update-config","verify","debug","code-review","simplify","batch","fewer-permission-prompts","doctor","loop","claude-api","run","run-skill-generator","agents","clear","color","compact","config","context","effort","fast","heapdump","init","mcp","model","__remote-workflow","reload-skills","rename","review","security-review","usage","insights","recap","goal","team-onboarding"],"apiKeySource":"ANTHROPIC_API_KEY","claude_code_version":"2.1.212","output_style":"default","agents":["claude" ... [truncated]
+stderr: None
