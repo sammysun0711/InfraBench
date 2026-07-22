@@ -6,8 +6,8 @@ InfraBench is a benchmark of **20 real-world AI-infrastructure engineering tasks
 targeting **AMD MI35X (CDNA4 / gfx950)** GPUs. Each task drops an AI agent into a
 Docker sandbox with a terminal, gives it a natural-language problem, and scores
 the result with a **deterministic per-task verifier** — no LLM-as-judge. Tasks
-span five categories: **model deployment, profiling analysis, kernel
-implementation, kernel tuning, and debug triage**.
+span six main categories: **model deployment, profiling analysis, kernel
+implementation, kernel tuning, algorithm, and debug triage**.
 
 It is built on the [Harbor framework](https://github.com/harbor-framework/harbor), 
 run with the `harbor` CLI, so any harbor-supported agent (claude-code, codex, opencode,
@@ -52,8 +52,8 @@ against a frozen harness, so a task only passes when the work is actually correc
 | `paged-attention-hd256` | kernel-implementation | hard | 1 |
 | `gemm-fp8-ptpc-quant` | kernel-implementation | hard | 1 |
 | `qr-rmsnorm-fusion` | kernel-implementation | hard | **2** |
-| `llvm-simple-constant-propagation` | compiler-optimization | medium | 1 |
-| `cute-layout-composition` | algorithm-implementation | medium | 1 |
+| `llvm-simple-constant-propagation` | algorithm | medium | 1 |
+| `cute-layout-composition` | algorithm | medium | 1 |
 | `pointnet2-hipify` | debug-triage | medium | 1 |
 | `vllm-aiter-debug` | debug-triage | hard | 1 |
 | `sglang-mmmu-ipc-crash` | debug-triage | hard | **2** |
