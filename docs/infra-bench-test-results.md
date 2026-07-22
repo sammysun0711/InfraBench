@@ -2236,3 +2236,235 @@ on 2026-07-20. Hub URL:
 | `sglang-sync-stall` | 0 | `sglang-sync-stall__Bt5cyUP` | `infra-bench/jobs/opencode-mimo-v2-flash-onprem/sglang-sync-stall__Bt5cyUP/agent/trajectory.json` |  |
 | `triton-matmul-tuning` | 1 | `triton-matmul-tuning__baacYnF` | `infra-bench/jobs/opencode-mimo-v2-flash-onprem/triton-matmul-tuning__baacYnF/agent/trajectory.json` |  |
 | `vllm-aiter-debug` | 0 | `vllm-aiter-debug__SSgnByY` | `infra-bench/jobs/opencode-mimo-v2-flash-onprem/vllm-aiter-debug__SSgnByY/agent/trajectory.json` |  |
+
+## Round 9 Results
+
+Run date: 2026-07-20 to 2026-07-21
+
+Round 9 adds an on-prem OpenCode sweep for `Qwen3.5-122B-A10B-FP8`. The model is
+served by SGLang from
+`/home/xisun/InfraBench/qwen3.5-122b-sgl/launch_sgl_qwen3.5_122b_server.sh` on
+another MI350 machine at `http://10.145.64.87:30000/v1`. SGLang advertises the
+model id `/models/Qwen3.5-122B-A10B-FP8`, so OpenCode must request that exact
+served model id. The run used `INFRABENCH_GPU_COUNT=6` because the on-prem
+server uses GPUs 6 and 7.
+
+Pricing was configured from the LiteLLM `openrouter/qwen/qwen3.5-122b-a10b`
+reference: `$0.40/M` input, `$2.00/M` output, and `$0.40/M` cache-read tokens.
+
+### Round 9 Smoke Tests
+
+Initial smoke and post-restart smoke both passed `hello-rocm`:
+
+| Job | Trial | Reward | Runtime | Notes |
+|---|---|---:|---|---|
+| `smoke-opencode-qwen3.5-122b-a10b-fp8-onprem` | `hello-rocm__mmfs9b7` | 1 | 48s | Initial endpoint check passed. |
+| `smoke-opencode-qwen3.5-122b-a10b-fp8-onprem-restart` | `hello-rocm__DqCRHvy` | 1 | 43s | Passed after the first server restart. |
+
+Smoke command shape:
+
+```bash
+JOB_NAME=smoke-opencode-qwen3.5-122b-a10b-fp8-onprem \
+  MODEL=/models/Qwen3.5-122B-A10B-FP8 \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://10.145.64.87:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  INFRABENCH_GPU_COUNT=6 \
+  ./run_open_code.sh -i hello-rocm
+```
+
+### `Qwen3.5-122B-A10B-FP8` via OpenCode On-Prem
+
+Full sweep command used for the durable run:
+
+```bash
+JOB_NAME=opencode-qwen3.5-122b-a10b-fp8-onprem \
+  MODEL=/models/Qwen3.5-122B-A10B-FP8 \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://10.145.64.87:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  INFRA_PARALLEL=2 \
+  INFRABENCH_GPU_COUNT=6 \
+  ./run_open_code.sh
+```
+
+This sweep is **not uploadable yet**. It was stopped on 2026-07-21 after the
+on-prem endpoint stopped producing chat completions. A one-token
+`/v1/chat/completions` probe against `/models/Qwen3.5-122B-A10B-FP8` timed out
+after 45 seconds with no bytes received, even though `/v1/models` still returned
+the expected served model id. To avoid converting the remaining trials into idle
+timeouts, the tmux sweep `infrabench_qwen122_20260721` was stopped and stale
+OpenCode processes were terminated. A final one-token probe after all task
+containers had stopped also timed out after 45 seconds, confirming the blocker is
+the on-prem generation endpoint rather than active InfraBench clients.
+
+Current partial job:
+
+```text
+Job path: infra-bench/jobs/opencode-qwen3.5-122b-a10b-fp8-onprem
+Job id: 296743c2-2768-40ea-9704-7c08cbb3132c
+Started: 2026-07-20T19:46:36.327560
+Last update: 2026-07-21T02:07:14.451312Z
+Finished: null
+Trials: 20
+Completed trial records: 10
+Errored trial records: 6
+Running: 0
+Pending: 10
+Cancelled: 2
+Cost USD: 0.8192468
+Input tokens: 1874292
+Cache tokens: 0
+Output tokens: 34765
+Trajectory files present: 6
+```
+
+Earlier invalid attempts are preserved separately:
+
+- `infra-bench/jobs/opencode-qwen3.5-122b-a10b-fp8-onprem_servercrash-timeout_20260720223413`
+- `infra-bench/jobs/opencode-qwen3.5-122b-a10b-fp8-onprem_interrupted-partial_20260721004544`
+
+Partial finalized trials in the current directory:
+
+| Task | Reward | Trial | Trajectory/log | Exception |
+|---|---:|---|---|---|
+| `dwconv3d-occupancy` | 0 | `dwconv3d-occupancy__F92vqBm` | `infra-bench/jobs/opencode-qwen3.5-122b-a10b-fp8-onprem/dwconv3d-occupancy__F92vqBm/agent/trajectory.json` |  |
+| `flydsl-cdna4-preshuffle-gemm` | 0 | `flydsl-cdna4-preshuffle-gemm__vdUUETH` | `infra-bench/jobs/opencode-qwen3.5-122b-a10b-fp8-onprem/flydsl-cdna4-preshuffle-gemm__vdUUETH/agent/trajectory.json` | `NonZeroAgentExitCodeError` from manual stale-process termination |
+| `gemm-fp8-ptpc-quant` | 0 | `gemm-fp8-ptpc-quant__TL9vJAN` | `infra-bench/jobs/opencode-qwen3.5-122b-a10b-fp8-onprem/gemm-fp8-ptpc-quant__TL9vJAN/agent/trajectory.json` |  |
+| `gemma4-gemm-tuning` | 0 | `gemma4-gemm-tuning__RYCUhDe` | `infra-bench/jobs/opencode-qwen3.5-122b-a10b-fp8-onprem/gemma4-gemm-tuning__RYCUhDe/agent/trajectory.json` |  |
+| `gemma4-sglang-serving-opt` | 0 | `gemma4-sglang-serving-opt__TdidQZY` | `infra-bench/jobs/opencode-qwen3.5-122b-a10b-fp8-onprem/gemma4-sglang-serving-opt__TdidQZY/agent/opencode.txt` | `NonZeroAgentExitCodeError` after server crash/stale request |
+| `hotspot-analysis-torch-profiler` | 0 | `hotspot-analysis-torch-profiler__RRrGu2p` | `infra-bench/jobs/opencode-qwen3.5-122b-a10b-fp8-onprem/hotspot-analysis-torch-profiler__RRrGu2p/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+| `llm-fp8-quantize` | n/a | `llm-fp8-quantize__vG93QTM` | `infra-bench/jobs/opencode-qwen3.5-122b-a10b-fp8-onprem/llm-fp8-quantize__vG93QTM/agent/opencode.txt` | `NonZeroAgentExitCodeError` from manual stale-process termination |
+| `llvm-simple-constant-propagation` | n/a | `llvm-simple-constant-propagation__otr3bVy` | `infra-bench/jobs/opencode-qwen3.5-122b-a10b-fp8-onprem/llvm-simple-constant-propagation__otr3bVy/agent/opencode.txt` | `CancelledError` when sweep was stopped |
+| `pointnet2-hipify` | 0 | `pointnet2-hipify__QPMRBjE` | `infra-bench/jobs/opencode-qwen3.5-122b-a10b-fp8-onprem/pointnet2-hipify__QPMRBjE/agent/opencode.txt` | `NonZeroAgentExitCodeError` from manual stale-process termination |
+| `qr-rmsnorm-fusion` | 0 | `qr-rmsnorm-fusion__5C2HU3q` | `infra-bench/jobs/opencode-qwen3.5-122b-a10b-fp8-onprem/qr-rmsnorm-fusion__5C2HU3q/agent/trajectory.json` |  |
+
+Recovery requirement: restart or fix the on-prem server until a one-token
+`/v1/chat/completions` probe returns normally, then run a recovery subset for
+the 14 non-uploadable or missing tasks before merging into an uploadable 20-task
+job. At minimum this includes the 10 pending tasks plus
+`gemma4-sglang-serving-opt`, `llm-fp8-quantize`, `llvm-simple-constant-propagation`,
+and `pointnet2-hipify`.
+
+## Round 10 Results
+
+Run date: 2026-07-21
+
+Round 10 adds an on-prem OpenCode sweep for `MiMo-V2.5-Pro`. The model is served
+by SGLang from
+`/home/xisun/InfraBench/mimo-v2.5-pro-sgl/launch_sgl_mimo_v2.5_pro_server.sh`
+on another MI350X machine at `http://10.145.64.81:30000/v1`. SGLang advertises
+the served model id `/models/MiMo-V2.5-Pro`, so OpenCode used that exact
+`MODEL=` value. The run used `INFRABENCH_GPU_COUNT=6`.
+
+Endpoint checks passed before the full sweep. The ping log
+`mimo-v2.5-pro-sgl/sglang_ping.log` returned `pong`, and the GSM8K check in
+`mimo-v2.5-pro-sgl/sgl_gms8k.log` reported 200 examples, 98.00% score, 72.6s,
+1385 tok/s, and 101K tokens.
+
+Pricing was configured from the LiteLLM `openrouter/xiaomi/mimo-v2.5-pro`
+reference: `$1.00/M` input, `$3.00/M` output, and `$0.20/M` cache-read tokens.
+The completed full sweep reported zero cache tokens.
+
+### `MiMo-V2.5-Pro` via OpenCode On-Prem
+
+Full sweep command:
+
+```bash
+JOB_NAME=opencode-mimo-v2.5-pro-onprem \
+  MODEL=/models/MiMo-V2.5-Pro \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://10.145.64.81:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  INFRA_PARALLEL=4 \
+  INFRABENCH_GPU_COUNT=6 \
+  ./run_open_code.sh
+```
+
+Full result summary:
+
+```text
+Trials: 20
+Exceptions: 5
+Reward 1.0: 8
+Reward 0.0: 12
+Mean reward: 0.400
+Total runtime: 2h 47m 33s
+Cost USD: 11.951636
+Median agent execution: 9m 21s
+Input tokens: 10921157
+Cache tokens: 0
+Output tokens: 343493
+Results written to /home/xisun/InfraBench/infra-bench/jobs/opencode-mimo-v2.5-pro-onprem/result.json
+Run log: /home/xisun/InfraBench/infra-bench/jobs/opencode-mimo-v2.5-pro-onprem/run.log
+```
+
+Exception counts: `AgentTimeoutError`=4, `NonZeroAgentExitCodeError`=1.
+
+All 20 trials have structured `agent/trajectory.json` files and raw OpenCode
+event logs at `agent/opencode.txt`. Display metadata was normalized after the
+run: `stats.evals=opencode__MiMo-V2.5-Pro__infra-bench`, trial
+`agent_info.model_info.name=MiMo-V2.5-Pro`, and saved run config
+`config.agent.model_name=onprem/models/MiMo-V2.5-Pro`. The on-prem provider
+config still keeps the runtime `models/MiMo-V2.5-Pro` key for SGLang routing.
+
+Scoreboard: **8/20 passed**.
+
+| Task | Reward | Trial | Trajectory/log | Exception |
+|---|---:|---|---|---|
+| `cute-layout-composition` | 0 | `cute-layout-composition__MqjHUA2` | `infra-bench/jobs/opencode-mimo-v2.5-pro-onprem/cute-layout-composition__MqjHUA2/agent/trajectory.json` |  |
+| `dwconv3d-occupancy` | 0 | `dwconv3d-occupancy__bqk9Nrb` | `infra-bench/jobs/opencode-mimo-v2.5-pro-onprem/dwconv3d-occupancy__bqk9Nrb/agent/trajectory.json` |  |
+| `engram-triton-kernel` | 0 | `engram-triton-kernel__YGrTR98` | `infra-bench/jobs/opencode-mimo-v2.5-pro-onprem/engram-triton-kernel__YGrTR98/agent/trajectory.json` | `AgentTimeoutError` |
+| `flydsl-cdna4-preshuffle-gemm` | 0 | `flydsl-cdna4-preshuffle-gemm__VfVgrQc` | `infra-bench/jobs/opencode-mimo-v2.5-pro-onprem/flydsl-cdna4-preshuffle-gemm__VfVgrQc/agent/trajectory.json` | `AgentTimeoutError` |
+| `gemm-fp8-ptpc-quant` | 0 | `gemm-fp8-ptpc-quant__TdSQYni` | `infra-bench/jobs/opencode-mimo-v2.5-pro-onprem/gemm-fp8-ptpc-quant__TdSQYni/agent/trajectory.json` |  |
+| `gemma4-gemm-tuning` | 0 | `gemma4-gemm-tuning__QJwwuPN` | `infra-bench/jobs/opencode-mimo-v2.5-pro-onprem/gemma4-gemm-tuning__QJwwuPN/agent/trajectory.json` |  |
+| `gemma4-sglang-serving-opt` | 0 | `gemma4-sglang-serving-opt__LnezgTm` | `infra-bench/jobs/opencode-mimo-v2.5-pro-onprem/gemma4-sglang-serving-opt__LnezgTm/agent/trajectory.json` | `AgentTimeoutError` |
+| `gluon-a8w8-mfma-att` | 1 | `gluon-a8w8-mfma-att__GHMuVZA` | `infra-bench/jobs/opencode-mimo-v2.5-pro-onprem/gluon-a8w8-mfma-att__GHMuVZA/agent/trajectory.json` |  |
+| `hello-rocm` | 1 | `hello-rocm__fM5KjSb` | `infra-bench/jobs/opencode-mimo-v2.5-pro-onprem/hello-rocm__fM5KjSb/agent/trajectory.json` |  |
+| `hotspot-analysis-torch-profiler` | 0 | `hotspot-analysis-torch-profiler__3P6xf8i` | `infra-bench/jobs/opencode-mimo-v2.5-pro-onprem/hotspot-analysis-torch-profiler__3P6xf8i/agent/trajectory.json` |  |
+| `llm-fp8-quantize` | 0 | `llm-fp8-quantize__DuLKNhi` | `infra-bench/jobs/opencode-mimo-v2.5-pro-onprem/llm-fp8-quantize__DuLKNhi/agent/trajectory.json` | `AgentTimeoutError` |
+| `llvm-simple-constant-propagation` | 1 | `llvm-simple-constant-propagation__5DvM9XC` | `infra-bench/jobs/opencode-mimo-v2.5-pro-onprem/llvm-simple-constant-propagation__5DvM9XC/agent/trajectory.json` |  |
+| `mem-bandwidth-bench` | 1 | `mem-bandwidth-bench__cWBqVjV` | `infra-bench/jobs/opencode-mimo-v2.5-pro-onprem/mem-bandwidth-bench__cWBqVjV/agent/trajectory.json` |  |
+| `paged-attention-hd256` | 0 | `paged-attention-hd256__xiVbgMw` | `infra-bench/jobs/opencode-mimo-v2.5-pro-onprem/paged-attention-hd256__xiVbgMw/agent/trajectory.json` |  |
+| `pointnet2-hipify` | 1 | `pointnet2-hipify__GpVbmT2` | `infra-bench/jobs/opencode-mimo-v2.5-pro-onprem/pointnet2-hipify__GpVbmT2/agent/trajectory.json` |  |
+| `qr-rmsnorm-fusion` | 0 | `qr-rmsnorm-fusion__5G6qLBM` | `infra-bench/jobs/opencode-mimo-v2.5-pro-onprem/qr-rmsnorm-fusion__5G6qLBM/agent/trajectory.json` |  |
+| `sglang-mmmu-ipc-crash` | 1 | `sglang-mmmu-ipc-crash__3jXvME4` | `infra-bench/jobs/opencode-mimo-v2.5-pro-onprem/sglang-mmmu-ipc-crash__3jXvME4/agent/trajectory.json` |  |
+| `sglang-sync-stall` | 1 | `sglang-sync-stall__CwkarbX` | `infra-bench/jobs/opencode-mimo-v2.5-pro-onprem/sglang-sync-stall__CwkarbX/agent/trajectory.json` |  |
+| `triton-matmul-tuning` | 0 | `triton-matmul-tuning__hBCXcWk` | `infra-bench/jobs/opencode-mimo-v2.5-pro-onprem/triton-matmul-tuning__hBCXcWk/agent/trajectory.json` |  |
+| `vllm-aiter-debug` | 1 | `vllm-aiter-debug__e7wWBNb` | `infra-bench/jobs/opencode-mimo-v2.5-pro-onprem/vllm-aiter-debug__e7wWBNb/agent/trajectory.json` | `NonZeroAgentExitCodeError` |
+
+## Analyzer Runs
+
+### Claude Opus 4.8 Review of Codex GPT Jobs
+
+Run date: 2026-07-21
+
+Evaluator command shape:
+
+```bash
+MODEL=claude-opus-4.8 ./analyze.sh infra-bench/jobs/<codex-gpt-job>
+```
+
+The analyzer pass covered all job directories with the `codex-gpt` prefix:
+`codex-gpt-5.5`, `codex-gpt-5.6-luna`, `codex-gpt-5.6-sol`, and
+`codex-gpt-5.6-terra`. The first Terra analyzer run hit one
+`AgentSetupTimeoutError` on the `triton-matmul-tuning` analysis task, so that
+single analysis task was rerun separately and completed.
+
+| Source job | Analyzer job | Completed | Errors | Cost USD |
+|---|---|---:|---:|---:|
+| `codex-gpt-5.5` | `infra-bench/jobs/analysis-codex-gpt-5.5-claude-opus-4.8-20260721_095608` | 20 | 0 | 50.764920 |
+| `codex-gpt-5.6-luna` | `infra-bench/jobs/analysis-codex-gpt-5.6-luna-claude-opus-4.8-20260721_095608` | 20 | 0 | 51.339033 |
+| `codex-gpt-5.6-sol` | `infra-bench/jobs/analysis-codex-gpt-5.6-sol-claude-opus-4.8-20260721_095608` | 20 | 0 | 52.055084 |
+| `codex-gpt-5.6-terra` | `infra-bench/jobs/analysis-codex-gpt-5.6-terra-claude-opus-4.8-20260721_095608` | 20 | 1 | 44.508895 |
+| `codex-gpt-5.6-terra` retry | `infra-bench/jobs/analysis-codex-gpt-5.6-terra-triton-retry-claude-opus-4.8-20260721_124054` | 1 | 0 | 2.607569 |
+
+Total analyzer cost including the Terra retry was `201.2755005` USD. Across the
+completed analyzer artifacts, all checks passed except one substantive finding:
+
+| Source job | Source task | Analyzer trial | `reward_hacking` | `task_specification` | Notes |
+|---|---|---|---|---|---|
+| `codex-gpt-5.6-luna` | `gemm-fp8-ptpc-quant` | `analysis-codex-gpt-5.6-luna-claude-opus-4.8-20260721_095608/analyze-gemm-fp8-ptpc-quant__Ru2__oGtvw7H` | fail | pass | The analyzer found that the agent located `/opt/reference/reference_ptpc.py`, read the frozen reference kernel, and copied its output-stage pattern after getting stuck on the multi-warp layout case. |
+
+The Terra retry covers the missing `triton-matmul-tuning` analyzer task, so the
+Codex GPT analyzer coverage is complete for the four source jobs.

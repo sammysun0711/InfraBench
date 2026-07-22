@@ -20,14 +20,16 @@ Each model family is driven by the agent that natively speaks its API:
 | **claude-code** | `run_claude_code.sh` | (blank — Anthropic gateway) | `claude-opus-4.6`, `claude-haiku-4.5`, `Claude-Sonnet-5`, `claude-opus-4.8` |
 | **codex** | `run_codex.sh` | `openai` | `gpt-5.6-sol`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.6-terra` |
 | **opencode** | `run_open_code.sh` | `amd` | `DeepSeek-V4-Flash` (retest), `MiniMax-M2.7`, `Kimi-K2.6`, `Qwen3.6-35B-A3B`, `gemini-3.5-flash`, `Gemma-4-31B` |
-| **opencode** | `run_open_code.sh` | `onprem` | `GLM-5.2-FP8` (Round 4, SGLang server at `http://10.145.64.81:30000/v1`), `MiniMax-M3` (Round 5, vLLM server at `http://10.145.64.81:30000/v1`), `Kimi-K2.7-Code` (Round 6, vLLM server at `http://10.145.64.81:30000/v1`), `Qwopus3.6-27B-Coder` (Round 6, local SGLang server at `http://127.0.0.1:9527/v1`), `Qwopus3.6-35B-A3B-Coder` (Round 6, local SGLang server at `http://127.0.0.1:9528/v1`), `Qwen3.5-397B-A17B-FP8` (Round 7, SGLang server at `http://10.145.64.81:30000/v1`), `MiMo-V2-Flash` (Round 8, SGLang server at `http://10.145.64.81:30000/v1`) |
+| **opencode** | `run_open_code.sh` | `onprem` | `GLM-5.2-FP8` (Round 4, SGLang server at `http://10.145.64.81:30000/v1`), `MiniMax-M3` (Round 5, vLLM server at `http://10.145.64.81:30000/v1`), `Kimi-K2.7-Code` (Round 6, vLLM server at `http://10.145.64.81:30000/v1`), `Qwopus3.6-27B-Coder` (Round 6, local SGLang server at `http://127.0.0.1:9527/v1`), `Qwopus3.6-35B-A3B-Coder` (Round 6, local SGLang server at `http://127.0.0.1:9528/v1`), `Qwen3.5-397B-A17B-FP8` (Round 7, SGLang server at `http://10.145.64.81:30000/v1`), `MiMo-V2-Flash` (Round 8, SGLang server at `http://10.145.64.81:30000/v1`), `Qwen3.5-122B-A10B-FP8` (Round 9, local SGLang server at `http://10.145.64.87:30000/v1`), `MiMo-V2.5-Pro` (Round 10, SGLang server at `http://10.145.64.81:30000/v1`) |
 
 All 14 gateway-backed planned models are available in the AMD LLM gateway
 catalog (`/v1/models`). The Round 4 `GLM-5.2-FP8` run uses an on-prem SGLang
 server because the AMD LLM gateway deployment is down. The Round 5 `MiniMax-M3`
 and Round 6 `Kimi-K2.7-Code` runs use on-prem vLLM servers. The Round 7
-`Qwen3.5-397B-A17B-FP8` and Round 8 `MiMo-V2-Flash` runs use on-prem SGLang
-servers on another MI350 machine. The Round 6
+`Qwen3.5-397B-A17B-FP8`, Round 8 `MiMo-V2-Flash`, and Round 10
+`MiMo-V2.5-Pro` runs use on-prem SGLang servers on another MI350 machine. The
+Round 9 `Qwen3.5-122B-A10B-FP8` run uses a local SGLang server pinned to GPUs 6
+and 7. The Round 6
 `Qwopus3.6-27B-Coder` and `Qwopus3.6-35B-A3B-Coder` runs use local SGLang
 servers pinned to GPUs 6 and 7, so all InfraBench agent trials for those sweeps
 must run with `INFRABENCH_GPU_COUNT=6` to keep GPUs 6/7 out of the task
@@ -46,7 +48,9 @@ gateway route reject `Grok-4.3` for both Chat Completions and Responses with
 > The models in *this* plan that go through opencode (DeepSeek-V4-Flash,
 > MiniMax-M2.7, MiniMax-M3, Kimi-K2.6, Kimi-K2.7-Code,
 > Qwen3.6-35B-A3B, Qwopus3.6-27B-Coder, Qwopus3.6-35B-A3B-Coder,
-> Qwen3.5-397B-A17B-FP8, MiMo-V2-Flash, gemini-3.5-flash, and Gemma-4-31B) are treated as chat models → always pass
+> Qwen3.5-397B-A17B-FP8, MiMo-V2-Flash, Qwen3.5-122B-A10B-FP8,
+> MiMo-V2.5-Pro,
+> gemini-3.5-flash, and Gemma-4-31B) are treated as chat models → always pass
 > `AMD_OPENCODE_NPM='@ai-sdk/openai-compatible'`.
 
 ---
@@ -171,6 +175,24 @@ JOB_NAME=smoke-opencode-mimo-v2-flash-onprem \
   AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
   INFRABENCH_GPU_COUNT=6 \
   ./run_open_code.sh -i hello-rocm
+
+# opencode round-9 local on-prem SGLang model; use the exact model id served by SGLang
+JOB_NAME=smoke-opencode-qwen3.5-122b-a10b-fp8-onprem \
+  MODEL=/models/Qwen3.5-122B-A10B-FP8 \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://10.145.64.87:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  INFRABENCH_GPU_COUNT=6 \
+  ./run_open_code.sh -i hello-rocm
+
+# opencode round-10 on-prem SGLang model; use the exact model id served by SGLang
+JOB_NAME=smoke-opencode-mimo-v2.5-pro-onprem \
+  MODEL=/models/MiMo-V2.5-Pro \
+  AMD_OPENCODE_PROVIDER=onprem \
+  AMD_CODEX_BASE_URL=http://10.145.64.81:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' \
+  INFRABENCH_GPU_COUNT=6 \
+  ./run_open_code.sh -i hello-rocm
 ```
 
 For newly added opencode models and the DeepSeek retest, run a model-specific
@@ -251,6 +273,16 @@ JOB_NAME=opencode-mimo-v2-flash-onprem MODEL=/models/MiMo-V2-Flash \
   AMD_OPENCODE_PROVIDER=onprem AMD_CODEX_BASE_URL=http://10.145.64.81:30000/v1 \
   AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' INFRA_PARALLEL=4 \
   INFRABENCH_GPU_COUNT=6 ./run_open_code.sh
+
+JOB_NAME=opencode-qwen3.5-122b-a10b-fp8-onprem MODEL=/models/Qwen3.5-122B-A10B-FP8 \
+  AMD_OPENCODE_PROVIDER=onprem AMD_CODEX_BASE_URL=http://10.145.64.87:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' INFRA_PARALLEL=4 \
+  INFRABENCH_GPU_COUNT=6 ./run_open_code.sh
+
+JOB_NAME=opencode-mimo-v2.5-pro-onprem MODEL=/models/MiMo-V2.5-Pro \
+  AMD_OPENCODE_PROVIDER=onprem AMD_CODEX_BASE_URL=http://10.145.64.81:30000/v1 \
+  AMD_OPENCODE_NPM='@ai-sdk/openai-compatible' INFRA_PARALLEL=4 \
+  INFRABENCH_GPU_COUNT=6 ./run_open_code.sh
 ```
 
 Each runner prints a `passed/total` summary and **exits nonzero** if any task
@@ -277,6 +309,10 @@ For `Qwen3.5-397B-A17B-FP8`, the exact LiteLLM TensorMesh key lists cache-read
 as zero, but this plan accounts cache-read at the input rate (`$0.60/M`) for
 conservative cross-run comparison.
 
+For `Qwen3.5-122B-A10B-FP8`, the LiteLLM `openrouter/qwen/qwen3.5-122b-a10b`
+key has no cache-read override, so this plan uses the input rate (`$0.40/M`) for
+cache-read accounting.
+
 | Model | LiteLLM source key | Input | Output | Cache read |
 |---|---|---:|---:|---:|
 | `DeepSeek-V4-Flash` | `deepseek-v4-flash` | 0.14 | 0.28 | 0.0028 |
@@ -287,7 +323,9 @@ conservative cross-run comparison.
 | `Qwopus3.6-27B-Coder` | `libertai/qwen3.6-27b` | 0.15 | 0.50 | 0.15 |
 | `Qwopus3.6-35B-A3B-Coder` | `scaleway/qwen/qwen3.6-35b-a3b` | 0.25 | 1.50 | 0.25 |
 | `Qwen3.5-397B-A17B-FP8` | `tensormesh/Qwen/Qwen3.5-397B-A17B-FP8` | 0.60 | 3.60 | 0.60 |
+| `Qwen3.5-122B-A10B-FP8` | `openrouter/qwen/qwen3.5-122b-a10b` | 0.40 | 2.00 | 0.40 |
 | `MiMo-V2-Flash` | `openrouter/xiaomi/mimo-v2-flash` | 0.10 | 0.30 | 0.01 |
+| `MiMo-V2.5-Pro` | `openrouter/xiaomi/mimo-v2.5-pro` | 1.00 | 3.00 | 0.20 |
 | `Qwen3.6-27B` | `libertai/qwen3.6-27b` | 0.15 | 0.50 | 0.15 |
 | `Qwen3.6-35B-A3B` | `scaleway/qwen/qwen3.6-35b-a3b` | 0.25 | 1.50 | 0.25 |
 | `gemini-3.5-flash` | `gemini-3.5-flash` | 1.50 | 9.00 | 0.15 |
@@ -376,6 +414,23 @@ task latency.
   `--reasoning-parser qwen3`, `--tool-call-parser mimo`, `--tp-size 4`,
   `--dp-size 2`, and Triton attention backends. Keep `INFRABENCH_GPU_COUNT=6`
   while the local Qwopus servers are running on GPUs 6/7.
+- **On-prem Qwen3.5-122B routing:** `Qwen3.5-122B-A10B-FP8` is served by SGLang
+  from `/home/xisun/InfraBench/qwen3.5-122b-sgl/launch_sgl_qwen3.5_122b_server.sh`
+  on this MI350 machine at `http://10.145.64.87:30000/v1`. SGLang advertises
+  `/models/Qwen3.5-122B-A10B-FP8`, so use that exact `MODEL=` value. The launch
+  uses `--reasoning-parser qwen3`, `--tool-call-parser qwen3_coder`,
+  `--attention-backend aiter`, `--tp 2`, and GPUs 6/7 via
+  `HIP_VISIBLE_DEVICES=6,7`. Keep `INFRABENCH_GPU_COUNT=6` so InfraBench task
+  containers do not allocate those GPUs.
+- **On-prem MiMo-V2.5-Pro routing:** `MiMo-V2.5-Pro` is served by SGLang from
+  `/home/xisun/InfraBench/mimo-v2.5-pro-sgl/launch_sgl_mimo_v2.5_pro_server.sh`
+  on another MI350 machine at `http://10.145.64.81:30000/v1`. SGLang advertises
+  `/models/MiMo-V2.5-Pro`, so use that exact `MODEL=` value. The launch uses
+  `--reasoning-parser mimo`, `--tool-call-parser mimo`, `--tp-size 8`,
+  `--disable-custom-all-reduce`, and Triton attention backends. The pre-sweep
+  endpoint checks passed (`sgl-eval ping`) and GSM8K scored 98.00% on 200
+  examples. Keep `INFRABENCH_GPU_COUNT=6` while the local Qwopus servers are
+  running on GPUs 6/7.
 - **Backend flakiness (gateway-side, not our config):** if a model 404s/500s at
   the gateway, treat it as a backend outage; retry later or skip. The current
   opencode plan assumes `DeepSeek-V4-Flash`, `Kimi-K2.6`,
@@ -399,11 +454,13 @@ task latency.
 
 1. Smoke test (hello-rocm) for all 3 agents → confirm auth.
 2. Full sweep, one model at a time (serial across models; `INFRA_PARALLEL`
-   parallelizes tasks within a model). 21 sweeps total, including the
+   parallelizes tasks within a model). 23 sweeps total, including the
    `DeepSeek-V4-Flash` opencode retest, the Round 4 on-prem GLM run, the
    Round 5 on-prem MiniMax-M3 run, and the Round 6 on-prem Kimi-K2.7-Code,
    Qwopus3.6-27B-Coder, and Qwopus3.6-35B-A3B-Coder runs, plus the Round 7
-   on-prem Qwen3.5-397B-A17B-FP8 run, and the Round 8 on-prem MiMo-V2-Flash run.
+   on-prem Qwen3.5-397B-A17B-FP8 run, the Round 8 on-prem MiMo-V2-Flash run,
+   the Round 9 on-prem Qwen3.5-122B-A10B-FP8 run, and the Round 10 on-prem
+   MiMo-V2.5-Pro run.
 3. Triage reward-0s: separate genuine misses from infra/gateway errors; re-run
    infra failures.
 4. Build the agent × model scoreboard (pass-rate, cost, latency).
