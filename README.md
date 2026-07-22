@@ -219,4 +219,9 @@ trials passed or failed:
 ./analyze.sh jobs/<timestamp>/                    # analyze a whole job
 ./analyze.sh jobs/<timestamp>/ --failing          # only failing trials
 ./analyze.sh jobs/<timestamp>/dwconv3d-occupancy  # one trial
+AGENT=codex MODEL=gpt-5.5 ./analyze.sh jobs/<timestamp>/ --failing
 ```
+
+The default analyzer is `claude-code` with `claude-opus-4.8`. `AGENT=codex`
+uses `infra-bench/agents/amd_codex.py`, so Codex analysis goes through the same
+AMD gateway configuration as `run_codex.sh`.
