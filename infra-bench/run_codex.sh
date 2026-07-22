@@ -23,7 +23,7 @@
 #   Extra args pass straight through to `harbor run`.
 set -euo pipefail
 
-ENV_FILE="${ENV_FILE:-/home/xisun/setup_env.sh}"
+ENV_FILE="${ENV_FILE:-${HOME:?HOME not set}/setup_env.sh}"
 MODEL="${MODEL:-gpt-5.5}"
 GATEWAY_BASE_URL="${AMD_CODEX_BASE_URL:-https://llm-api.amd.com/Unified/v1}"
 # Prefix the model with the provider so harbor records model_info.provider (fills

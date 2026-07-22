@@ -32,7 +32,7 @@
 #   Extra args pass straight through to `harbor run`.
 set -euo pipefail
 
-ENV_FILE="${ENV_FILE:-/home/xisun/setup_env.sh}"
+ENV_FILE="${ENV_FILE:-${HOME:?HOME not set}/setup_env.sh}"
 MODEL="${MODEL:-gpt-5.5}"
 PROVIDER_ID="${AMD_OPENCODE_PROVIDER:-amd}"
 GATEWAY_BASE_URL="${AMD_CODEX_BASE_URL:-https://llm-api.amd.com/Unified/v1}"
@@ -91,12 +91,14 @@ PRICING = {
     # - libertai/qwen3.6-27b
     # - on-prem Qwopus3.6 aliases map to the matching Qwen3.6 reference prices
     # - tensormesh/Qwen/Qwen3.5-397B-A17B-FP8
+    # - openrouter/qwen/qwen3.5-122b-a10b
     # - openrouter/qwen/qwen3.5-35b-a3b
     # - openrouter/qwen/qwen3.5-27b
     # - gemini-3.5-flash
     # - bedrock_mantle/google.gemma-4-31b
     # - sambanova/MiniMax-M2.7
     # - openrouter/xiaomi/mimo-v2-flash
+    # - openrouter/xiaomi/mimo-v2.5-pro
     "deepseek-v4-flash": {"input": 0.14,  "output": 0.28, "cache_read": 0.0028},
     "deepseek-v4-pro":   {"input": 0.435, "output": 0.87, "cache_read": 0.003625},
     "deepseek":          {"input": 0.14,  "output": 0.28, "cache_read": 0.0028},
@@ -107,6 +109,8 @@ PRICING = {
     "qwopus3.6-27b":     {"input": 0.15,  "output": 0.5,  "cache_read": 0.15},
     "qwen3.5-397b-a17b-fp8": {"input": 0.60, "output": 3.6, "cache_read": 0.60},
     "qwen3.5-397b-a17b": {"input": 0.60,  "output": 3.6,  "cache_read": 0.60},
+    "qwen3.5-122b-a10b-fp8": {"input": 0.40, "output": 2.0, "cache_read": 0.40},
+    "qwen3.5-122b-a10b": {"input": 0.40,  "output": 2.0,  "cache_read": 0.40},
     "qwen3.5-35b-a3b":   {"input": 0.25,  "output": 2.0,  "cache_read": 0.25},
     "qwen3.5-27b":       {"input": 0.30,  "output": 2.4,  "cache_read": 0.30},
     "gemma-4-31b":       {"input": 0.14,  "output": 0.4,  "cache_read": 0.14},
@@ -137,7 +141,9 @@ PRICING = {
     "minimax-m2.7":             {"input": 0.6,  "output": 2.4,  "cache_read": 0.6},
     "minimax-m3":               {"input": 0.6,  "output": 2.4,  "cache_read": 0.12},
     "minimax":                  {"input": 0.3,  "output": 1.2,  "cache_read": 0.06},
-    # MiMo: LiteLLM source key openrouter/xiaomi/mimo-v2-flash.
+    # MiMo: LiteLLM source keys openrouter/xiaomi/mimo-v2-flash and
+    # openrouter/xiaomi/mimo-v2.5-pro.
+    "mimo-v2.5-pro":            {"input": 1.0,  "output": 3.0,  "cache_read": 0.2},
     "mimo-v2-flash":            {"input": 0.1,  "output": 0.3,  "cache_read": 0.01},
     # NOTE: gemini-3.5-pro-preview intentionally omitted — no public price yet.
 }

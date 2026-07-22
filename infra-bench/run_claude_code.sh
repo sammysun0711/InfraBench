@@ -23,7 +23,7 @@
 set -euo pipefail
 
 # --- config -----------------------------------------------------------------
-ENV_FILE="${ENV_FILE:-/home/xisun/setup_env.sh}"
+ENV_FILE="${ENV_FILE:-${HOME:?HOME not set}/setup_env.sh}"
 AGENT="${AGENT:-claude-code}"
 MODEL="${MODEL:-claude-opus-4.8}"
 # GPU pool: shared host dir for cross-trial flock arbitration, and total GPUs.
