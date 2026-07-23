@@ -2468,3 +2468,44 @@ completed analyzer artifacts, all checks passed except one substantive finding:
 
 The Terra retry covers the missing `triton-matmul-tuning` analyzer task, so the
 Codex GPT analyzer coverage is complete for the four source jobs.
+
+### Codex GPT-5.6-Sol Review of Non-Codex Jobs
+
+Run date: 2026-07-21 to 2026-07-22
+
+Evaluator command shape:
+
+```bash
+MODEL=gpt-5.6-sol ./analyze.sh infra-bench/jobs/<non-codex-job>
+```
+
+This analyzer pass covered all current job directories except those with the
+`codex-gpt` prefix, because the Codex GPT jobs were already reviewed by Claude
+Opus 4.8 in the previous analyzer pass. The covered set includes the Claude
+Code jobs and all OpenCode jobs present under `infra-bench/jobs`.
+
+| Source job | Analyzer job | Completed | Errors | Cost USD |
+|---|---|---:|---:|---:|
+| `claude-haiku-4.5` | `infra-bench/jobs/analysis-claude-haiku-4.5-codex-gpt-5.6-sol-20260721_155359` | 20 | 0 | 18.421642 |
+| `claude-opus-4.6` | `infra-bench/jobs/analysis-claude-opus-4.6-codex-gpt-5.6-sol-20260721_155359` | 20 | 0 | 18.830555 |
+| `claude-opus-4.8` | `infra-bench/jobs/analysis-claude-opus-4.8-codex-gpt-5.6-sol-20260721_155359` | 20 | 0 | 12.491774 |
+| `claude-sonnet-5` | `infra-bench/jobs/analysis-claude-sonnet-5-codex-gpt-5.6-sol-20260721_155359` | 20 | 0 | 15.862632 |
+| `opencode-deepseek-v4-flash` | `infra-bench/jobs/analysis-opencode-deepseek-v4-flash-codex-gpt-5.6-sol-20260721_155359` | 20 | 0 | 15.348175 |
+| `opencode-gemini-3.5-flash` | `infra-bench/jobs/analysis-opencode-gemini-3.5-flash-codex-gpt-5.6-sol-20260721_155359` | 20 | 0 | 18.709835 |
+| `opencode-gemma-4-31b` | `infra-bench/jobs/analysis-opencode-gemma-4-31b-codex-gpt-5.6-sol-20260721_155359` | 20 | 0 | 14.815040 |
+| `opencode-glm-5.2-fp8-onprem` | `infra-bench/jobs/analysis-opencode-glm-5.2-fp8-onprem-codex-gpt-5.6-sol-20260721_155359` | 20 | 0 | 21.527364 |
+| `opencode-kimi-k2.6` | `infra-bench/jobs/analysis-opencode-kimi-k2.6-codex-gpt-5.6-sol-20260721_155359` | 20 | 0 | 17.844321 |
+| `opencode-kimi-k2.7-code-onprem` | `infra-bench/jobs/analysis-opencode-kimi-k2.7-code-onprem-codex-gpt-5.6-sol-20260721_155359` | 20 | 0 | 25.457220 |
+| `opencode-mimo-v2-flash-onprem` | `infra-bench/jobs/analysis-opencode-mimo-v2-flash-onprem-codex-gpt-5.6-sol-20260721_155359` | 20 | 0 | 21.309638 |
+| `opencode-mimo-v2.5-pro-onprem` | `infra-bench/jobs/analysis-opencode-mimo-v2.5-pro-onprem-codex-gpt-5.6-sol-20260721_155359` | 20 | 0 | 20.673591 |
+| `opencode-minimax-m2.7` | `infra-bench/jobs/analysis-opencode-minimax-m2.7-codex-gpt-5.6-sol-20260721_155359` | 20 | 0 | 19.310379 |
+| `opencode-minimax-m3-onprem` | `infra-bench/jobs/analysis-opencode-minimax-m3-onprem-codex-gpt-5.6-sol-20260721_155359` | 20 | 0 | 18.905778 |
+| `opencode-qwen3.5-397b-a17b-fp8-onprem` | `infra-bench/jobs/analysis-opencode-qwen3.5-397b-a17b-fp8-onprem-codex-gpt-5.6-sol-20260721_155359` | 20 | 0 | 19.034255 |
+| `opencode-qwen3.6-35b-a3b` | `infra-bench/jobs/analysis-opencode-qwen3.6-35b-a3b-codex-gpt-5.6-sol-20260721_155359` | 20 | 0 | 18.043250 |
+| `opencode-qwopus3.6-27b-coder-onprem` | `infra-bench/jobs/analysis-opencode-qwopus3.6-27b-coder-onprem-codex-gpt-5.6-sol-20260721_155359` | 20 | 0 | 19.433080 |
+| `opencode-qwopus3.6-35b-a3b-coder-onprem` | `infra-bench/jobs/analysis-opencode-qwopus3.6-35b-a3b-coder-onprem-codex-gpt-5.6-sol-20260721_155359` | 20 | 0 | 14.585668 |
+
+Total analyzer cost for this non-Codex pass was `330.604197` USD. All 18
+analyzer jobs completed all 20 analysis trials with zero runner errors, and the
+structured analyzer outputs did not report any `reward_hacking` or
+`task_specification` failures.
